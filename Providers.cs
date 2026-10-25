@@ -16,7 +16,10 @@ public record Usage(string? Plan, List<UsageWindow> Windows);
 /// <summary>A message meant for the user, shown as is.</summary>
 class UsageException(string message) : Exception(message);
 
-public class Provider(string id, string name, string logo, string color, string dashboard, Func<Task<Usage>> fetch)
+/// <param name="exe">The provider's CLI, whose id is its command name.</param>
+/// <param name="signedIn">Whether to fetch at all; by default, whether the CLI is installed.</param>
+public class Provider(string id, string name, string logo, string color, string dashboard, Func<string?> exe, string loginArgs,
+    Func<Task<Usage>> fetch, Func<bool>? signedIn = null)
 {
     public string Id => id;
     public string Name => name;
@@ -24,6 +27,14 @@ public class Provider(string id, string name, string logo, string color, string 
     public string Logo => logo;
     public string Color => color;
     public string Dashboard => dashboard;
+
+    /// <summary>Signed in, as far as the files and commands on this PC tell, so shown and fetched. Checked on each refresh.</summary>
+    public bool Available { get; private set; } = signedIn?.Invoke() ?? exe() != null;
+    public bool Installed => exe() != null;
+    public string LoginCommand => $"{id} {loginArgs}";
+
+    /// <summary>The CLI's own sign-in in a console window, which stays open only if it fails; null without the CLI.</summary>
+    public ProcessStartInfo? Login() => exe() is { } path ? new("cmd.exe", $"/c \"\"{path}\" {loginArgs} || pause\"") : null;
 
     public Usage? Usage { get; private set; }
     public string? Error { get; private set; }
@@ -35,6 +46,12 @@ public class Provider(string id, string name, string logo, string color, string 
 
     public async Task Refresh()
     {
+        Available = signedIn?.Invoke() ?? exe() != null;
+        if (!Available)
+        {
+            (Usage, Error) = (null, null);
+            return;
+        }
         try
         {
             Usage = await fetch();
@@ -67,16 +84,16 @@ static class Providers
             "every logo must parse as WPF path data, which Mindows draws too");
     }
 
-    /// <summary>The providers signed in on this PC: Claude Code's credentials, or the codex and grok commands.</summary>
-    public static List<Provider> Detect() => new[] { Claude(), Codex(), Grok() }.OfType<Provider>().ToList();
+    /// <summary>Every provider; the ones signed in on this PC are <see cref="Provider.Available"/>.</summary>
+    public static List<Provider> All() => new() { Claude(), Codex(), Grok() };
 
     // The credential files belong to each CLI, which rotates their refresh tokens: read them only, never refresh here.
 
-    static Provider? Claude()
+    static Provider Claude()
     {
         var file = Path.Combine(Home, ".claude", ".credentials.json");
         const string Expired = "로그인이 만료됐습니다. Claude Code를 실행하면 갱신됩니다.";
-        return !File.Exists(file) ? null : new("claude", "Claude", Logos.Claude, "#D97757", "https://claude.ai/settings/usage", async () =>
+        return new("claude", "Claude", Logos.Claude, "#D97757", "https://claude.ai/settings/usage", () => Find("claude"), "auth login", async () =>
         {
             var oauth = JsonNode.Parse(await File.ReadAllTextAsync(file))?["claudeAiOauth"]
                 ?? throw new UsageException("Claude Code에 로그인되어 있지 않습니다.");
@@ -93,14 +110,14 @@ static class Providers
             foreach (var (key, label) in new[] { ("five_hour", "세션"), ("seven_day", "주간"), ("seven_day_opus", "주간 (Opus)"), ("seven_day_sonnet", "주간 (Sonnet)") })
                 if (usage[key] is { } w && w["utilization"] is { } used) windows.Add(new(label, (double)used, Date(w["resets_at"])));
             return new(ClaudePlan((string?)oauth["subscriptionType"], (string?)oauth["rateLimitTier"]), windows);
-        });
+        }, () => File.Exists(file));
     }
 
-    static Provider? Codex()
+    static Provider Codex()
     {
-        if (Find("codex") is not { } exe) return null;
-        return new("codex", "Codex", Logos.Codex, "#10A37F", "https://chatgpt.com/codex/settings/usage", async () =>
+        return new("codex", "Codex", Logos.Codex, "#10A37F", "https://chatgpt.com/codex/settings/usage", () => Find("codex"), "login", async () =>
         {
+            var exe = Find("codex") ?? throw new UsageException("codex 명령을 찾을 수 없습니다.");
             JsonNode result;
             try
             {
@@ -122,11 +139,12 @@ static class Providers
         });
     }
 
-    static Provider? Grok()
+    static Provider Grok()
     {
-        if (Find("grok", Path.Combine(Home, ".grok", "bin")) is not { } exe) return null;
-        return new("grok", "Grok", Logos.Grok, "#8E8E93", "https://grok.com/?_s=usage", async () =>
+        static string? Exe() => Find("grok", Path.Combine(Home, ".grok", "bin"));
+        return new("grok", "Grok", Logos.Grok, "#8E8E93", "https://grok.com/?_s=usage", Exe, "login", async () =>
         {
+            var exe = Exe() ?? throw new UsageException("grok 명령을 찾을 수 없습니다.");
             JsonNode result;
             try
             {

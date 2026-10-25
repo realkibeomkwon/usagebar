@@ -80,6 +80,9 @@
                     <TextBlock Text="사용량 대시보드"/>
                 </Button>
                 <Border Height="1" Background="{DynamicResource MenuBorder}" Margin="10,6"/>
+                <Button Style="{StaticResource MenuButton}" Click="Settings_Click">
+                    <TextBlock Text="UsageBar 설정"/>
+                </Button>
                 <Button Style="{StaticResource MenuButton}" Click="Quit_Click">
                     <TextBlock Text="UsageBar 종료"/>
                 </Button>

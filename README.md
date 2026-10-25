@@ -16,6 +16,14 @@ dotnet run -c Release
 
 로그인되어 있는 공급자만 표시됩니다. 사용량은 5분마다 갱신되며, 팝업의 **새로 고침**으로 즉시 갱신할 수도 있습니다.
 
+## 설정
+
+팝업의 **UsageBar 설정**을 누르면 설정 창이 열립니다. 왼쪽에서 공급자를 고르면 오른쪽에 다음 항목이 표시됩니다.
+
+- **메뉴 바에 표시**: 메뉴 바와 트레이 아이콘에 표시할지 정합니다. 메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다. 숨긴 공급자 목록은 `%LOCALAPPDATA%\UsageBar\settings.json`에 저장됩니다.
+- **상태, 요금제, 업데이트**: 마지막 갱신 결과입니다.
+- **로그인**: 새 콘솔 창에서 CLI의 로그인 명령(`claude auth login`, `codex login`, `grok login`)을 실행합니다. 로그인에 실패하면 창이 닫히지 않고 오류를 보여 줍니다. 창이 닫히면 사용량을 다시 확인하므로, 새로 로그인한 공급자는 다시 실행하지 않아도 메뉴 바에 나타납니다.
+
 | 공급자 | 조건 | 가져오는 방법 |
 |---|---|---|
 | Claude | `~/.claude/.credentials.json`(Claude Code 로그인) | Claude OAuth 사용량 API |
@@ -52,6 +60,7 @@ UsageBar는 갱신할 때마다 `%LOCALAPPDATA%\UsageBar\status.json`을 통째�
 }
 ```
 
+- `providers`에는 메뉴 바에 표시하도록 선택한 공급자만 들어갑니다.
 - `remainingPercent`는 사용량을 아직 받지 못했으면 `null`입니다. `error`는 마지막 갱신에 실패했을 때의 메시지이며, 이때 `windows`에는 마지막으로 성공한 값이 남아 있습니다.
 - Mindows는 15분 넘게 갱신되지 않은 파일을 무시합니다.
 - 팝업 열기: Mindows는 `AllowSetForegroundWindow(pid)`를 호출한 뒤, `hwnd`에 `RegisterWindowMessage("UsageBar.ShowPopup")` 메시지를 보냅니다. `wParam`은 `providers`의 순서(인덱스)이고, `lParam`은 팝업 왼쪽 위 좌표(화면 픽셀, 하위 16비트 x, 상위 16비트 y)입니다.

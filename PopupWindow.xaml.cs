@@ -62,7 +62,7 @@ public partial class PopupWindow : Window
         RefreshButton.IsEnabled = !app.Refreshing;
     }
 
-    static string Ago(DateTimeOffset at)
+    internal static string Ago(DateTimeOffset at)
     {
         var minutes = (int)(DateTimeOffset.Now - at).TotalMinutes;
         return minutes < 1 ? "방금 업데이트됨" : minutes < 60 ? $"{minutes}분 전 업데이트" : $"{minutes / 60}시간 전 업데이트";
@@ -97,6 +97,12 @@ public partial class PopupWindow : Window
     }
 
     async void Refresh_Click(object sender, RoutedEventArgs e) => await app.Refresh();
+
+    void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+        SettingsWindow.Open(app);
+    }
 
     void Dashboard_Click(object sender, RoutedEventArgs e)
     {

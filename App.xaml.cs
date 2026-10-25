@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -16,17 +17,23 @@ public partial class App : Application
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UsageBar")).FullName;
     /// <summary>The usage Mindows shows in its menu bar; see README for the format.</summary>
     static string StatusPath => Path.Combine(Dir, "status.json");
+    /// <summary>The ids of providers left out of the menu bar and the tray, so a newly detected one shows.</summary>
+    static string SettingsPath => Path.Combine(Dir, "settings.json");
     /// <summary>Posted by Mindows when its menu bar item is clicked: wParam is the provider's index, lParam the item's bottom left in screen pixels.</summary>
     static readonly uint ShowPopupMessage = RegisterWindowMessage("UsageBar.ShowPopup");
     static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
 
     Mutex? instance;
     HwndSource? messages;
-    readonly List<Provider> providers = UsageBar.Providers.Detect();
+    readonly List<Provider> providers = UsageBar.Providers.All();
     readonly List<Forms.NotifyIcon> trayIcons = new();
+    readonly HashSet<string> hidden = LoadHidden();
+    /// <summary>The providers in the status file, in its order, which Mindows' item indexes refer to.</summary>
+    List<Provider> published = new();
     PopupWindow? popup;
     (Provider? provider, long at) lastClosed;
 
+    public static bool LightTheme { get; private set; }
     public bool Refreshing { get; private set; }
     /// <summary>Raised when a refresh starts and when it ends.</summary>
     public event Action? Refreshed;
@@ -49,7 +56,7 @@ public partial class App : Application
         // Mindows leaves these out of its menu bar and draws its own items from the status file.
         foreach (var p in providers)
         {
-            var icon = new Forms.NotifyIcon { Icon = Badge(p), Text = p.Name, Visible = true };
+            var icon = new Forms.NotifyIcon { Icon = Badge(p), Text = p.Name, Visible = Visible(p) };
             icon.MouseUp += (_, _) => ShowPopup(p, Forms.Cursor.Position.X, Forms.Cursor.Position.Y, fromTray: true);
             trayIcons.Add(icon);
         }
@@ -83,6 +90,7 @@ public partial class App : Application
             var old = icon.Icon;
             icon.Icon = Badge(p);
             old?.Dispose();
+            icon.Visible = Visible(p); // a provider signed in or out since
             var tip = p.Remaining is { } left ? $"{p.Name}: {left:0}% 남음" : $"{p.Name}: {p.Error ?? "사용량 없음"}";
             icon.Text = tip.Length > 127 ? tip[..127] : tip; // the most a tray tooltip holds
         }
@@ -90,13 +98,37 @@ public partial class App : Application
         Refreshed?.Invoke();
     }
 
+    public IReadOnlyList<Provider> AllProviders => providers;
+    public bool IsShown(Provider p) => !hidden.Contains(p.Id);
+    /// <summary>Whether hiding it would leave nothing in the menu bar to click, and so no way back to the popup.</summary>
+    public bool IsLastShown(Provider p) => p.Available && IsShown(p) && providers.Count(q => q.Available && IsShown(q)) == 1;
+    /// <summary>In the menu bar and the tray: signed in and shown, or every signed in one when all of those are hidden.</summary>
+    bool Visible(Provider p) => p.Available && (IsShown(p) || !providers.Any(q => q.Available && IsShown(q)));
+
+    public void SetShown(Provider p, bool shown)
+    {
+        if (shown) hidden.Remove(p.Id);
+        else hidden.Add(p.Id);
+        for (var i = 0; i < providers.Count; i++) trayIcons[i].Visible = Visible(providers[i]);
+        try { File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new { hidden })); }
+        catch (IOException e) { Log(e); }
+        Publish();
+    }
+
+    static HashSet<string> LoadHidden()
+    {
+        try { return JsonNode.Parse(File.ReadAllText(SettingsPath))?["hidden"]?.Deserialize<HashSet<string>>() ?? new(); }
+        catch (Exception e) when (e is IOException or JsonException or InvalidOperationException) { return new(); } // none yet, or not ours
+    }
+
     void Publish()
     {
+        published = providers.Where(Visible).ToList();
         var status = new
         {
             pid = Environment.ProcessId,
             hwnd = (long)messages!.Handle,
-            providers = providers.Select(p => new
+            providers = published.Select(p => new
             {
                 id = p.Id,
                 name = p.Name,
@@ -120,9 +152,9 @@ public partial class App : Application
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if ((uint)msg == ShowPopupMessage && (int)wParam is var i && i >= 0 && i < providers.Count)
+        if ((uint)msg == ShowPopupMessage && (int)wParam is var i && i >= 0 && i < published.Count)
         {
-            ShowPopup(providers[i], (short)(long)lParam, (short)((long)lParam >> 16), fromTray: false);
+            ShowPopup(published[i], (short)(long)lParam, (short)((long)lParam >> 16), fromTray: false);
             handled = true;
         }
         return IntPtr.Zero;
@@ -172,12 +204,13 @@ public partial class App : Application
     /// <summary>Mindows' menu colors, so the popup matches its menus.</summary>
     void ApplyTheme()
     {
-        var light = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        LightTheme = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
             "SystemUsesLightTheme", 0) is 1;
-        var colors = light
-            ? new[] { "#F2F6F6F6", "#FF1C1C1C", "#22000000", "#1F000000", "#1A000000" }
-            : new[] { "#F22B2B2B", "#FFF0F0F0", "#33FFFFFF", "#33FFFFFF", "#26FFFFFF" };
-        string[] keys = { "MenuBg", "MenuFg", "MenuBorder", "Hover", "Track" };
+        // WindowBg is opaque, for the settings window: normal (non-layered) windows draw translucent backgrounds over black.
+        var colors = LightTheme
+            ? new[] { "#F2F6F6F6", "#FF1C1C1C", "#22000000", "#1F000000", "#1A000000", "#FFF4F4F4" }
+            : new[] { "#F22B2B2B", "#FFF0F0F0", "#33FFFFFF", "#33FFFFFF", "#26FFFFFF", "#FF242424" };
+        string[] keys = { "MenuBg", "MenuFg", "MenuBorder", "Hover", "Track", "WindowBg" };
         for (var i = 0; i < keys.Length; i++)
         {
             var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i]));
