@@ -18,7 +18,9 @@ dotnet run -c Release
 
 ## 설정
 
-팝업의 **UsageBar 설정**을 누르면 설정 창이 열립니다. 왼쪽에서 공급자를 고르면 오른쪽에 다음 항목이 표시됩니다.
+팝업의 **UsageBar 설정**을 누르면 설정 창이 열립니다. **일반**의 **로그인 시 자동 실행**을 켜면 Windows에 로그인할 때 UsageBar가 실행됩니다. 이 설정은 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`의 `UsageBar` 값으로 저장되며, 지금 실행 중인 UsageBar.exe의 경로가 기록됩니다.
+
+왼쪽에서 공급자를 고르면 오른쪽에 다음 항목이 표시됩니다.
 
 - **메뉴 바에 표시**: 메뉴 바와 트레이 아이콘에 표시할지 정합니다. 메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다. 숨긴 공급자 목록은 `%LOCALAPPDATA%\UsageBar\settings.json`에 저장됩니다.
 - **상태, 요금제, 업데이트**: 마지막 갱신 결과입니다.

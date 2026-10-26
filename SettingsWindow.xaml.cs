@@ -2,17 +2,23 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Win32;
 
 namespace UsageBar;
 
-/// <summary>UsageBar's settings, as Mindows' and CodexBar's providers pane: a sidebar category per provider. Changes apply and save at once.</summary>
+/// <summary>UsageBar's settings, as Mindows' and CodexBar's providers pane: 일반, then a sidebar category per provider. Changes apply and save at once.</summary>
 public partial class SettingsWindow : Window
 {
     record Page(Provider Provider, string Name, Brush Color, Geometry Logo, bool Shown, bool CanHide, string ShownNote,
         string Status, string Plan, string Updated, bool Installed, string LoginLabel, string LoginNote);
+
+    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     static SettingsWindow? open;
 
@@ -30,6 +36,10 @@ public partial class SettingsWindow : Window
     {
         this.app = app;
         InitializeComponent();
+        foreach (var _ in app.AllProviders)
+            Pages.Items.Add(new TabItem { HeaderTemplate = (DataTemplate)Resources["ProviderHeader"], ContentTemplate = (DataTemplate)Resources["ProviderPage"] });
+        // The Run key itself is the setting, as in Mindows, so nothing keeps a copy that could drift from it.
+        LaunchAtLogin.IsChecked = Registry.CurrentUser.OpenSubKey(RunKey)?.GetValue("UsageBar") is not null;
         Render();
         app.Refreshed += Render;
         Closed += (_, _) =>
@@ -46,8 +56,7 @@ public partial class SettingsWindow : Window
 
     void Render()
     {
-        var selected = Pages.SelectedIndex;
-        Pages.ItemsSource = app.AllProviders.Select(p => new Page(p, p.Name,
+        var pages = app.AllProviders.Select(p => new Page(p, p.Name,
             new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.Color)), Geometry.Parse(p.Logo),
             app.IsShown(p), !app.IsLastShown(p),
             KeepWords(app.IsLastShown(p) ? "메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다." : !p.Available && app.IsShown(p) ? "로그인하면 표시됩니다." : ""),
@@ -57,11 +66,22 @@ public partial class SettingsWindow : Window
             app.Refreshing ? "업데이트 중..." : p.UpdatedAt is { } at ? PopupWindow.Ago(at) : "–",
             p.Installed, p.Available ? "다시 로그인" : "로그인",
             p.Installed ? $"터미널에서 {p.LoginCommand}을 실행합니다." : $"{p.Id} 명령을 설치한 뒤 로그인할 수 있습니다.")).ToList();
-        Pages.SelectedIndex = Math.Max(selected, 0);
+        for (var i = 0; i < pages.Count; i++)
+        {
+            var tab = (TabItem)Pages.Items[i + 1]; // after 일반
+            tab.DataContext = tab.Header = tab.Content = pages[i];
+        }
     }
 
     /// <summary>Wraps only at spaces: WPF breaks Korean between any two syllables, so word joiners hold each word together.</summary>
-    static string KeepWords(string text) => Regex.Replace(text, @"(?<=\S)(?=\S)", "⁠");
+    static string KeepWords(string text) => Regex.Replace(text, @"(?<=\S)(?=\S)", "\u2060");
+
+    void LaunchAtLogin_Click(object sender, RoutedEventArgs e)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+        if (LaunchAtLogin.IsChecked == true) key.SetValue("UsageBar", $"\"{Environment.ProcessPath}\"");
+        else key.DeleteValue("UsageBar", throwOnMissingValue: false);
+    }
 
     void Shown_Click(object sender, RoutedEventArgs e)
     {
@@ -84,4 +104,25 @@ public partial class SettingsWindow : Window
     }
 
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+}
+
+/// <summary>
+/// A settings switch that raises Click when a screen reader toggles it, as a mouse or key press does; WPF's own
+/// peer only flips IsChecked, so the change would show without being applied.
+/// </summary>
+public class Switch : CheckBox
+{
+    protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this);
+
+    class Peer(Switch owner) : CheckBoxAutomationPeer(owner), IToggleProvider
+    {
+        ToggleState IToggleProvider.ToggleState =>
+            ((Switch)Owner).IsChecked switch { true => ToggleState.On, false => ToggleState.Off, null => ToggleState.Indeterminate };
+
+        void IToggleProvider.Toggle()
+        {
+            if (!IsEnabled()) throw new ElementNotEnabledException();
+            ((Switch)Owner).OnClick();
+        }
+    }
 }
