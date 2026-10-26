@@ -63,6 +63,11 @@ public partial class App : Application
         var timer = new DispatcherTimer { Interval = Interval };
         timer.Tick += async (_, _) => await Refresh();
         timer.Start();
+        // Started at sign-in, UsageBar can beat the network; don't leave a failed first refresh up until the next tick.
+        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += (_, a) =>
+        {
+            if (a.IsAvailable) Dispatcher.InvokeAsync(Refresh);
+        };
         _ = Refresh();
     }
 

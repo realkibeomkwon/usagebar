@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security;
+using System.Security.Principal;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Automation;
@@ -19,6 +21,7 @@ public partial class SettingsWindow : Window
         string Status, string Plan, string Updated, bool Installed, string LoginLabel, string LoginNote);
 
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    const string TaskName = "UsageBar";
 
     static SettingsWindow? open;
 
@@ -38,8 +41,8 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         foreach (var _ in app.AllProviders)
             Pages.Items.Add(new TabItem { HeaderTemplate = (DataTemplate)Resources["ProviderHeader"], ContentTemplate = (DataTemplate)Resources["ProviderPage"] });
-        // The Run key itself is the setting, as in Mindows, so nothing keeps a copy that could drift from it.
-        LaunchAtLogin.IsChecked = Registry.CurrentUser.OpenSubKey(RunKey)?.GetValue("UsageBar") is not null;
+        // The task itself is the setting, as in Mindows, so nothing keeps a copy that could drift from it.
+        LaunchAtLogin.IsChecked = LogonTaskExists();
         Render();
         app.Refreshed += Render;
         Closed += (_, _) =>
@@ -78,9 +81,43 @@ public partial class SettingsWindow : Window
 
     void LaunchAtLogin_Click(object sender, RoutedEventArgs e)
     {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (LaunchAtLogin.IsChecked == true) key.SetValue("UsageBar", $"\"{Environment.ProcessPath}\"");
-        else key.DeleteValue("UsageBar", throwOnMissingValue: false);
+        // Earlier builds used the Run key, which Explorer starts a minute or more after sign-in.
+        Registry.CurrentUser.OpenSubKey(RunKey, writable: true)?.DeleteValue("UsageBar", throwOnMissingValue: false);
+        if (LaunchAtLogin.IsChecked == true) TaskFolder().RegisterTask(TaskName, LogonTaskXml(), 6 /* CREATE_OR_UPDATE */, null, null, 3 /* INTERACTIVE_TOKEN */);
+        else if (LogonTaskExists()) TaskFolder().DeleteTask(TaskName, 0);
+    }
+
+    static dynamic TaskFolder()
+    {
+        dynamic service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service")!)!;
+        service.Connect();
+        return service.GetFolder(@"\");
+    }
+
+    static bool LogonTaskExists()
+    {
+        try { TaskFolder().GetTask(TaskName); return true; }
+        catch (FileNotFoundException) { return false; }
+    }
+
+    /// <summary>Starts UsageBar as soon as the user signs in. The task's defaults would stop it after 3 days or on battery.</summary>
+    static string LogonTaskXml()
+    {
+        var user = SecurityElement.Escape(WindowsIdentity.GetCurrent().Name);
+        return $"""
+            <?xml version="1.0" encoding="UTF-16"?>
+            <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+              <Triggers><LogonTrigger><UserId>{user}</UserId></LogonTrigger></Triggers>
+              <Principals><Principal><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+              <Settings>
+                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+                <Priority>4</Priority>
+              </Settings>
+              <Actions><Exec><Command>{SecurityElement.Escape(Environment.ProcessPath)}</Command></Exec></Actions>
+            </Task>
+            """;
     }
 
     void Shown_Click(object sender, RoutedEventArgs e)

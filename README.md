@@ -18,7 +18,7 @@ dotnet run -c Release
 
 ## 설정
 
-팝업의 **UsageBar 설정**을 누르면 설정 창이 열립니다. **일반**의 **로그인 시 자동 실행**을 켜면 Windows에 로그인할 때 UsageBar가 실행됩니다. 이 설정은 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`의 `UsageBar` 값으로 저장되며, 지금 실행 중인 UsageBar.exe의 경로가 기록됩니다.
+팝업의 **UsageBar 설정**을 누르면 설정 창이 열립니다. **일반**의 **로그인 시 자동 실행**을 켜면 Windows에 로그인할 때 UsageBar가 실행됩니다. 이 설정은 작업 스케줄러에 로그온 시 실행되는 `UsageBar` 작업으로 등록되며, 지금 실행 중인 UsageBar.exe의 경로가 기록됩니다. `HKCU\...\CurrentVersion\Run`과 달리 Explorer의 시작 프로그램 지연을 기다리지 않으므로 로그인 직후 실행되고, 네트워크가 연결되면 사용량을 바로 다시 확인합니다.
 
 왼쪽에서 공급자를 고르면 오른쪽에 다음 항목이 표시됩니다.
 
