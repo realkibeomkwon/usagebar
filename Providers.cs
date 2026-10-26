@@ -87,23 +87,25 @@ static class Providers
     /// <summary>Every provider; the ones signed in on this PC are <see cref="Provider.Available"/>.</summary>
     public static List<Provider> All() => new() { Claude(), Codex(), Grok() };
 
-    // The credential files belong to each CLI, which rotates their refresh tokens: read them only, never refresh here.
+    // The credential files belong to each CLI. Codex and Grok renew their own sign-in through their CLIs; Claude Code has
+    // no command for that, so Claude's is renewed here the way Claude Code itself does it.
+
+    const string ClaudeLogin = "로그인이 필요합니다. 터미널에서 claude auth login을 실행하세요.";
+    const string ClaudeNotSignedIn = "Claude Code에 로그인되어 있지 않습니다.";
 
     static Provider Claude()
     {
         var file = Path.Combine(Home, ".claude", ".credentials.json");
-        const string Expired = "로그인이 만료됐습니다. Claude Code를 실행하면 갱신됩니다.";
         return new("claude", "Claude", Logos.Claude, "#D97757", "https://claude.ai/settings/usage", () => Find("claude"), "auth login", async () =>
         {
-            var oauth = JsonNode.Parse(await File.ReadAllTextAsync(file))?["claudeAiOauth"]
-                ?? throw new UsageException("Claude Code에 로그인되어 있지 않습니다.");
-            if (DateTimeOffset.FromUnixTimeMilliseconds((long)oauth["expiresAt"]!) < DateTimeOffset.UtcNow) throw new UsageException(Expired);
+            var oauth = JsonNode.Parse(await File.ReadAllTextAsync(file))?["claudeAiOauth"] ?? throw new UsageException(ClaudeNotSignedIn);
+            if (Expired(oauth["expiresAt"])) oauth = await RenewClaude(file);
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/api/oauth/usage");
             request.Headers.Authorization = new("Bearer", (string)oauth["accessToken"]!);
             request.Headers.Add("anthropic-beta", "oauth-2025-04-20");
             request.Headers.TryAddWithoutValidation("User-Agent", "claude-cli/2.1.0 (external, cli)");
             using var response = await Http.SendAsync(request);
-            if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UsageException(Expired);
+            if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UsageException(ClaudeLogin);
             response.EnsureSuccessStatusCode();
             var usage = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
             var windows = new List<UsageWindow>();
@@ -112,6 +114,87 @@ static class Providers
             return new(ClaudePlan((string?)oauth["subscriptionType"], (string?)oauth["rateLimitTier"]), windows);
         }, () => File.Exists(file));
     }
+
+    static bool Expired(JsonNode? unixMs) => DateTimeOffset.FromUnixTimeMilliseconds((long)unixMs!) < DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Renews Claude Code's expired access token as Claude Code does: under its refresh lock, after reading the file again,
+    /// replacing only the claudeAiOauth tokens. Claude Code reads the file again under the same lock, so it takes the new tokens.
+    /// </summary>
+    static async Task<JsonNode> RenewClaude(string file)
+    {
+        // Claude Code's two locks, taken in its order: the current one, and the one older Claude Code builds take alone.
+        var dir = Path.GetDirectoryName(file)!;
+        string[] locks = { Path.Combine(dir, ".oauth_refresh.lock"), dir + ".lock" };
+        if (!TryLock(locks[0])) throw new UsageException("Claude Code가 로그인을 갱신하는 중입니다.");
+        if (!TryLock(locks[1]))
+        {
+            TryDelete(locks[0]);
+            throw new UsageException("Claude Code가 로그인을 갱신하는 중입니다.");
+        }
+        try
+        {
+            var root = JsonNode.Parse(await File.ReadAllTextAsync(file))!;
+            var oauth = root["claudeAiOauth"] ?? throw new UsageException(ClaudeNotSignedIn);
+            if (!Expired(oauth["expiresAt"])) return oauth; // another Claude process renewed it meanwhile
+            if (oauth["refreshTokenExpiresAt"] is { } end && Expired(end)) throw new UsageException(ClaudeLogin);
+            var body = new JsonObject
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = (string)oauth["refreshToken"]!,
+                ["client_id"] = (string?)oauth["clientId"] ?? "9d1c250a-e61b-44d9-88ed-5944d1962f5e", // Claude Code's
+                ["scope"] = string.Join(' ', oauth["scopes"]!.AsArray().Select(s => (string)s!)),
+            };
+            using var response = await Http.PostAsync("https://platform.claude.com/v1/oauth/token",
+                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized) throw new UsageException(ClaudeLogin);
+            response.EnsureSuccessStatusCode();
+            var tokens = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            oauth["accessToken"] = (string)tokens["access_token"]!;
+            if (tokens["refresh_token"] is { } refresh) oauth["refreshToken"] = (string)refresh!;
+            oauth["expiresAt"] = now + (long)tokens["expires_in"]! * 1000;
+            if (tokens["refresh_token_expires_in"] is { } lifetime) oauth["refreshTokenExpiresAt"] = now + (long)lifetime * 1000;
+            else oauth.AsObject().Remove("refreshTokenExpiresAt");
+            if ((string?)tokens["scope"] is { Length: > 0 } scope)
+                oauth["scopes"] = new JsonArray(scope.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(s => (JsonNode)s).ToArray());
+            // Written next to the file and swapped in, so a reader never sees half a file and the file keeps its permissions.
+            var temp = file + ".usagebar";
+            await File.WriteAllTextAsync(temp, root.ToJsonString());
+            // The server may have retired the old refresh token already, so the new one must not stay behind in the temp file.
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    if (attempt < 3) File.Replace(temp, file, null);
+                    else File.Move(temp, file, overwrite: true);
+                    break;
+                }
+                catch (IOException) when (attempt < 3) { await Task.Delay(100 * (attempt + 1)); }
+                catch (UnauthorizedAccessException) when (attempt < 3) { await Task.Delay(100 * (attempt + 1)); }
+            }
+            return oauth;
+        }
+        finally
+        {
+            TryDelete(locks[1]);
+            TryDelete(locks[0]);
+        }
+    }
+
+    /// <summary>A proper-lockfile lock: a directory its holder touches every 5 s, stale after 60 s.</summary>
+    static bool TryLock(string dir) => CreateDirectory(dir, IntPtr.Zero)
+        || DateTime.UtcNow - Directory.GetLastWriteTimeUtc(dir) >= TimeSpan.FromSeconds(60) && TryDelete(dir) && CreateDirectory(dir, IntPtr.Zero);
+
+    static bool TryDelete(string dir)
+    {
+        try { Directory.Delete(dir); return true; }
+        catch (IOException) { return false; }
+    }
+
+    /// <summary>Unlike Directory.CreateDirectory, fails when the directory exists, which is what makes it a lock.</summary>
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern bool CreateDirectory(string path, IntPtr securityAttributes);
 
     static Provider Codex()
     {

@@ -30,10 +30,10 @@ dotnet run -c Release
 | Codex | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
 | Grok | PATH 또는 `~/.grok/bin`의 `grok` 명령 | `grok agent stdio`의 `_x.ai/billing` |
 
-각 CLI의 인증 파일은 읽기만 하고 토큰을 갱신하지 않습니다. 갱신된 토큰이 CLI의 로그인을 끊을 수 있기 때문입니다.
+로그인 갱신은 공급자마다 다릅니다.
 
-- Claude: 토큰이 만료되면 Claude Code를 한 번 실행해 갱신합니다.
-- Codex, Grok: CLI가 직접 로그인을 갱신합니다. 로그인이 만료되면 터미널에서 `codex login` 또는 `grok login`을 실행합니다.
+- Claude: 액세스 토큰(약 8시간 유효)이 만료되면 UsageBar가 Claude Code와 같은 방식으로 갱신합니다. Claude Code의 갱신 잠금(`~/.claude/.oauth_refresh.lock`과 이전 버전이 쓰는 `~/.claude.lock`)을 잡은 뒤 `.credentials.json`을 다시 읽고, 다른 프로세스가 이미 갱신하지 않았으면 리프레시 토큰으로 새 토큰을 받아 `claudeAiOauth`의 토큰 항목만 교체합니다. 그래서 부팅 직후 Claude Code나 Claude Desktop을 실행하지 않아도 사용량이 표시됩니다. 리프레시 토큰까지 만료되면 터미널에서 `claude auth login`을 실행합니다.
+- Codex, Grok: 인증 파일은 읽기만 합니다. CLI가 직접 로그인을 갱신합니다. 로그인이 만료되면 터미널에서 `codex login` 또는 `grok login`을 실행합니다.
 
 메뉴 바와 트레이 아이콘의 숫자는 가장 많이 사용한 한도 창의 남은 비율입니다(CodexBar의 자동 표시 방식).
 
