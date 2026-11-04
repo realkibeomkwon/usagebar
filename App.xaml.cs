@@ -56,7 +56,7 @@ public partial class App : Application
         // Mindows leaves these out of its menu bar and draws its own items from the status file.
         foreach (var p in providers)
         {
-            var icon = new Forms.NotifyIcon { Icon = Badge(p), Text = p.Name, Visible = Visible(p) };
+            var icon = new Forms.NotifyIcon { Icon = Badge(p), Text = p.Name, Visible = TrayVisible(p) };
             icon.MouseUp += (_, _) => ShowPopup(p, Forms.Cursor.Position.X, Forms.Cursor.Position.Y, fromTray: true);
             trayIcons.Add(icon);
         }
@@ -95,7 +95,7 @@ public partial class App : Application
             var old = icon.Icon;
             icon.Icon = Badge(p);
             old?.Dispose();
-            icon.Visible = Visible(p); // a provider signed in or out since
+            icon.Visible = TrayVisible(p); // a provider signed in or out since
             var tip = p.Remaining is { } left ? $"{p.Name}: {left:0}% 남음" : $"{p.Name}: {p.Error ?? "사용량 없음"}";
             icon.Text = tip.Length > 127 ? tip[..127] : tip; // the most a tray tooltip holds
         }
@@ -110,11 +110,14 @@ public partial class App : Application
     /// <summary>In the menu bar and the tray: signed in and shown, or every signed in one when all of those are hidden.</summary>
     bool Visible(Provider p) => p.Available && (IsShown(p) || !providers.Any(q => q.Available && IsShown(q)));
 
+    /// <summary>The tray as <see cref="Visible"/> has it, plus the first provider when none is signed in, so the popup and its settings stay reachable.</summary>
+    bool TrayVisible(Provider p) => Visible(p) || (p == providers[0] && !providers.Any(Visible));
+
     public void SetShown(Provider p, bool shown)
     {
         if (shown) hidden.Remove(p.Id);
         else hidden.Add(p.Id);
-        for (var i = 0; i < providers.Count; i++) trayIcons[i].Visible = Visible(providers[i]);
+        for (var i = 0; i < providers.Count; i++) trayIcons[i].Visible = TrayVisible(providers[i]);
         try { File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new { hidden })); }
         catch (IOException e) { Log(e); }
         Publish();
