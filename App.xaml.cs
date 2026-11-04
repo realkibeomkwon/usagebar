@@ -49,6 +49,8 @@ public partial class App : Application
         }
         DispatcherUnhandledException += (_, a) => Log(a.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, a) => Log(a.ExceptionObject);
+        try { SettingsWindow.UpdateLogonTask(); }
+        catch (Exception ex) { Log(ex); }
 
         ApplyTheme();
         messages = new HwndSource(new HwndSourceParameters("UsageBar") { ParentWindow = new IntPtr(-3) }); // HWND_MESSAGE

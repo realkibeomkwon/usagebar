@@ -87,6 +87,12 @@ public partial class SettingsWindow : Window
         else if (LogonTaskExists()) TaskFolder().DeleteTask(TaskName, 0);
     }
 
+    /// <summary>Points an existing logon task at this exe, so it follows UsageBar from a dev build to the installed copy.</summary>
+    public static void UpdateLogonTask()
+    {
+        if (LogonTaskExists()) TaskFolder().RegisterTask(TaskName, LogonTaskXml(), 6 /* CREATE_OR_UPDATE */, null, null, 3 /* INTERACTIVE_TOKEN */);
+    }
+
     static dynamic TaskFolder()
     {
         dynamic service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service")!)!;

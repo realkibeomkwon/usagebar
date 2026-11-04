@@ -12,6 +12,20 @@ dotnet run -c Release
 
 종료는 팝업 아래쪽의 **UsageBar 종료**를 사용합니다.
 
+## 설치 프로그램
+
+```powershell
+.\installer\build.ps1
+```
+
+`installer\Output\UsageBar-<버전>-setup.exe`가 만들어집니다. 빌드하려면 [Inno Setup 6](https://jrsoftware.org/isinfo.php)(`winget install JRSoftware.InnoSetup`)이 필요합니다. 버전은 `UsageBar.csproj`의 `<Version>`을 따릅니다.
+
+- 관리자 권한 없이 현재 사용자의 `%LOCALAPPDATA%\Programs\UsageBar`에 설치됩니다. .NET 런타임이 포함되어 있으므로 따로 설치하지 않아도 됩니다.
+- 시작 메뉴에 바로 가기가 생기고, 설치 앱 목록에서 제거할 수 있습니다. UsageBar가 실행 중이면 설치 및 제거 전에 종료하라고 안내합니다.
+- 제거하면 **로그인 시 자동 실행** 작업도 삭제됩니다. `%LOCALAPPDATA%\UsageBar`의 설정은 남겨 둡니다.
+- UsageBar는 시작할 때 **로그인 시 자동 실행** 작업이 있으면 그 작업이 지금 실행 중인 UsageBar.exe를 가리키도록 갱신합니다. 그래서 개발 빌드에서 켜 둔 설정도 설치한 UsageBar를 처음 실행하면 설치 경로로 옮겨 갑니다.
+- 코드 서명을 하지 않았으므로 처음 실행할 때 SmartScreen 경고가 표시될 수 있습니다.
+
 ## 공급자
 
 로그인되어 있는 공급자만 표시됩니다. 사용량은 5분마다 갱신되며, 팝업의 **새로 고침**으로 즉시 갱신할 수도 있습니다.
