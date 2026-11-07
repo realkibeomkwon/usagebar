@@ -17,7 +17,7 @@ namespace UsageBar;
 /// <summary>UsageBar's settings, as Mindows' and CodexBar's providers pane: 일반, then a sidebar category per provider. Changes apply and save at once.</summary>
 public partial class SettingsWindow : Window
 {
-    record Page(Provider Provider, string Name, Brush Color, Geometry Logo, bool Shown, bool CanHide, string ShownNote,
+    record Page(Provider Provider, string Name, Brush Color, Brush LogoFill, Geometry Logo, Geometry? Inner, bool Shown, bool CanHide, string ShownNote,
         string Status, string Plan, string Updated, bool Installed, string LoginLabel, string LoginNote);
 
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -60,8 +60,9 @@ public partial class SettingsWindow : Window
     void Render()
     {
         var pages = app.AllProviders.Select(p => new Page(p, p.Name,
-            new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.Color)), Geometry.Parse(p.Logo),
-            app.IsShown(p), !app.IsLastShown(p),
+            new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconBackground ?? p.Color)),
+            new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconForeground)), Geometry.Parse(p.Logo),
+            p.LogoInner is { } inner ? Geometry.Parse(inner) : null, app.IsShown(p), !app.IsLastShown(p),
             KeepWords(app.IsLastShown(p) ? "메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다." : !p.Available && app.IsShown(p) ? "로그인하면 표시됩니다." : ""),
             KeepWords(!p.Available ? (p.Installed ? "로그인되어 있지 않습니다." : $"{p.Id} 명령을 찾을 수 없습니다.")
                 : app.Refreshing ? "확인 중..." : p.Error ?? (p.Usage != null ? "로그인됨" : "아직 확인하지 않음")),

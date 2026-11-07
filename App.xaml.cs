@@ -216,11 +216,11 @@ public partial class App : Application
     {
         LightTheme = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
             "SystemUsesLightTheme", 0) is 1;
-        // WindowBg is opaque, for the settings window: normal (non-layered) windows draw translucent backgrounds over black.
+        // WindowBg, PaneBg and CardBg are Mindows' settings window colors, opaque: normal (non-layered) windows draw translucent backgrounds over black.
         var colors = LightTheme
-            ? new[] { "#F2F6F6F6", "#FF1C1C1C", "#22000000", "#1F000000", "#1A000000", "#FFF4F4F4" }
-            : new[] { "#F22B2B2B", "#FFF0F0F0", "#33FFFFFF", "#33FFFFFF", "#26FFFFFF", "#FF242424" };
-        string[] keys = { "MenuBg", "MenuFg", "MenuBorder", "Hover", "Track", "WindowBg" };
+            ? new[] { "#F2F6F6F6", "#FF1C1C1C", "#22000000", "#1F000000", "#1A000000", "#FFFFFFFF", "#FFF1EFEE", "#FFF7F7F7" }
+            : new[] { "#F22B2B2B", "#FFF0F0F0", "#33FFFFFF", "#33FFFFFF", "#26FFFFFF", "#FF222528", "#FF121617", "#FF292C2E" };
+        string[] keys = { "MenuBg", "MenuFg", "MenuBorder", "Hover", "Track", "WindowBg", "PaneBg", "CardBg" };
         for (var i = 0; i < keys.Length; i++)
         {
             var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i]));

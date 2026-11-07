@@ -15,7 +15,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
                         <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="6,5" Margin="0,1">
-                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
+                            <ContentPresenter x:Name="Hd" ContentSource="Header" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -23,7 +23,8 @@
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource Accent}"/>
-                                <Setter Property="Foreground" Value="White"/>
+                                <!-- Only the header: the TabItem's own Foreground would pass to a page set as its Content, as 일반's is. -->
+                                <Setter TargetName="Hd" Property="TextElement.Foreground" Value="White"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -33,7 +34,7 @@
 
         <!-- A group of rows, as on macOS. -->
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource Hover}"/>
+            <Setter Property="Background" Value="{DynamicResource CardBg}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource MenuBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="9"/>
@@ -114,7 +115,11 @@
         <DataTemplate x:Key="ProviderHeader">
             <StackPanel Orientation="Horizontal">
                 <Border Width="22" Height="22" CornerRadius="5" Background="{Binding Color}" Margin="0,0,8,0">
-                    <Path Data="{Binding Logo}" Fill="White" Stretch="Uniform" Margin="4"/>
+                    <Grid Margin="4">
+                        <!-- OpenCode's mark has a gray inner shade; its path repeats the mark's outline so both paths stretch alike. -->
+                        <Path Data="{Binding Inner}" Fill="#5A5858" Stretch="Uniform"/>
+                        <Path Data="{Binding Logo}" Fill="{Binding LogoFill}" Stretch="Uniform"/>
+                    </Grid>
                 </Border>
                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
             </StackPanel>
@@ -179,7 +184,7 @@
                         <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{DynamicResource Hover}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="0,0,1,0">
+                    <Border Background="{DynamicResource PaneBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="0,0,1,0">
                         <StackPanel IsItemsHost="True" Margin="10,12" KeyboardNavigation.DirectionalNavigation="Cycle"/>
                     </Border>
                     <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">

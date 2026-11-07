@@ -26,6 +26,11 @@ public class Provider(string id, string name, string logo, string color, string 
     /// <summary>WPF path data for the provider's mark.</summary>
     public string Logo => logo;
     public string Color => color;
+    /// <summary>WPF path data for a second shade of the mark, drawn under it; null for a one-tone mark.</summary>
+    public string? LogoInner { get; init; }
+    /// <summary>The settings icon's background when it differs from <see cref="Color"/>, which the popup's bars and the tray badge keep.</summary>
+    public string? IconBackground { get; init; }
+    public string IconForeground { get; init; } = "#FFFFFF";
     public string Dashboard => dashboard;
 
     /// <summary>Signed in, as far as the files and commands on this PC tell, so shown and fetched. Checked on each refresh.</summary>
@@ -78,14 +83,15 @@ static class Providers
     static Providers()
     {
         Debug.Assert(WindowLabel(300) == "세션" && WindowLabel(10080) == "주간" && WindowLabel(60 * 24 * 30) == "30일"
-            && ClaudePlan("max", "default_claude_max_20x") == "Max 20x" && ClaudePlan("pro", null) == "Pro",
+            && ClaudePlan("max", "default_claude_max_20x") == "Max 20x" && ClaudePlan("pro", null) == "Pro"
+            && GrokPlan("SuperGrok Heavy") == "Ultra" && GrokPlan("SuperGrok") == "Super" && GrokPlan("Plus") == "Plus",
             "window and plan labels must read like CodexBar's");
-        Debug.Assert(new[] { Logos.Claude, Logos.Codex, Logos.Grok }.All(d => !System.Windows.Media.Geometry.Parse(d).Bounds.IsEmpty),
+        Debug.Assert(new[] { Logos.Claude, Logos.Codex, Logos.Grok, Logos.OpenCode, Logos.OpenCodeInner }.All(d => !System.Windows.Media.Geometry.Parse(d).Bounds.IsEmpty),
             "every logo must parse as WPF path data, which Mindows draws too");
     }
 
     /// <summary>Every provider; the ones signed in on this PC are <see cref="Provider.Available"/>.</summary>
-    public static List<Provider> All() => new() { Claude(), Codex(), Grok() };
+    public static List<Provider> All() => new() { Claude(), Codex(), Grok(), OpenCode() };
 
     // The credential files belong to each CLI. Codex and Grok renew their own sign-in through their CLIs; Claude Code has
     // no command for that, so Claude's is renewed here the way Claude Code itself does it.
@@ -198,7 +204,7 @@ static class Providers
 
     static Provider Codex()
     {
-        return new("codex", "Codex", Logos.Codex, "#10A37F", "https://chatgpt.com/codex/settings/usage", () => Find("codex"), "login", async () =>
+        return new("codex", "ChatGPT", Logos.Codex, "#10A37F", "https://chatgpt.com/codex/settings/usage", () => Find("codex"), "login", async () =>
         {
             var exe = Find("codex") ?? throw new UsageException("codex 명령을 찾을 수 없습니다.");
             JsonNode result;
@@ -219,13 +225,13 @@ static class Providers
                 WindowLabel((int?)w["windowDurationMins"]), (double)w["usedPercent"]!,
                 w["resetsAt"] is { } at ? DateTimeOffset.FromUnixTimeSeconds((long)at) : null)).ToList();
             return new(Title((string?)limits["planType"]), windows);
-        });
+        }) { IconBackground = "#FFFFFF", IconForeground = "#000000" };
     }
 
     static Provider Grok()
     {
         static string? Exe() => Find("grok", Path.Combine(Home, ".grok", "bin"));
-        return new("grok", "Grok", Logos.Grok, "#8E8E93", "https://grok.com/?_s=usage", Exe, "login", async () =>
+        return new("grok", "Grok", Logos.Grok, "#000000", "https://grok.com/?_s=usage", Exe, "login", async () =>
         {
             var exe = Exe() ?? throw new UsageException("grok 명령을 찾을 수 없습니다.");
             JsonNode result;
@@ -260,9 +266,50 @@ static class Providers
             };
             var windows = new List<UsageWindow>();
             if (config["creditUsagePercent"] is { } used) windows.Add(new(label, (double)used, Date(period?["end"] ?? config["billingPeriodEnd"])));
-            return new((string?)result["subscription_tier"], windows);
+            return new(GrokPlan((string?)result["subscription_tier"]), windows);
         });
     }
+
+    const string OpenCodeLogin = "로그인이 필요합니다. 터미널에서 opencode auth login을 실행하세요.";
+
+    /// <summary>The API key opencode stores at sign-in; an opencode-go entry wins over the general opencode one.</summary>
+    // shortcut: reads only ~/.local/share/opencode/auth.json, not the SQLite credential table newer opencode builds use; add that if a login isn't found.
+    static string? OpenCodeKey()
+    {
+        try
+        {
+            var auth = JsonNode.Parse(File.ReadAllText(Path.Combine(Home, ".local", "share", "opencode", "auth.json")));
+            return (string?)(auth?["opencode-go"] ?? auth?["opencode"])?["key"];
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException) { return null; }
+    }
+
+    static Provider OpenCode()
+    {
+        static string? Exe() => Find("opencode", Path.Combine(Home, ".opencode", "bin"));
+        return new("opencode", "OpenCode", Logos.OpenCode, "#131010", "https://opencode.ai/auth", Exe, "auth login", async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://opencode.ai/zen/go/v1/usage");
+            request.Headers.Authorization = new("Bearer", OpenCodeKey() ?? throw new UsageException(OpenCodeLogin));
+            using var response = await Http.SendAsync(request);
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) throw new UsageException(OpenCodeLogin);
+            response.EnsureSuccessStatusCode();
+            var usage = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["usage"] ?? throw new UsageException("사용량 정보를 받지 못했습니다.");
+            var windows = new List<UsageWindow>();
+            foreach (var (key, label) in new[] { ("rolling", "세션"), ("weekly", "주간"), ("monthly", "월간") })
+                if (usage[key] is { } w && w["percent"] is { } used) windows.Add(new(label, (double)used, Date(w["resetsAt"])));
+            return new("Go", windows);
+        }, () => OpenCodeKey() != null) { LogoInner = Logos.OpenCodeInner };
+    }
+
+    /// <summary>The CLI still answers with the old plan names; Grok's unified plans call them Super and Ultra.</summary>
+    // shortcut: only these two are mapped, as Plus and Premium have no known CLI name yet; add them when one shows up.
+    static string? GrokPlan(string? tier) => tier switch
+    {
+        "SuperGrok Heavy" => "Ultra",
+        "SuperGrok" => "Super",
+        _ => tier,
+    };
 
     static string WindowLabel(int? minutes) => minutes switch
     {

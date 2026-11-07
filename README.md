@@ -38,13 +38,14 @@ dotnet run -c Release
 
 - **메뉴 바에 표시**: 메뉴 바와 트레이 아이콘에 표시할지 정합니다. 메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다. 숨긴 공급자 목록은 `%LOCALAPPDATA%\UsageBar\settings.json`에 저장됩니다.
 - **상태, 요금제, 업데이트**: 마지막 갱신 결과입니다.
-- **로그인**: 새 콘솔 창에서 CLI의 로그인 명령(`claude auth login`, `codex login`, `grok login`)을 실행합니다. 로그인에 실패하면 창이 닫히지 않고 오류를 보여 줍니다. 창이 닫히면 사용량을 다시 확인하므로, 새로 로그인한 공급자는 다시 실행하지 않아도 메뉴 바에 나타납니다.
+- **로그인**: 새 콘솔 창에서 CLI의 로그인 명령(`claude auth login`, `codex login`, `grok login`, `opencode auth login`)을 실행합니다. 로그인에 실패하면 창이 닫히지 않고 오류를 보여 줍니다. 창이 닫히면 사용량을 다시 확인하므로, 새로 로그인한 공급자는 다시 실행하지 않아도 메뉴 바에 나타납니다.
 
 | 공급자 | 조건 | 가져오는 방법 |
 |---|---|---|
 | Claude | `~/.claude/.credentials.json`(Claude Code 로그인) | Claude OAuth 사용량 API |
-| Codex | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
+| ChatGPT | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
 | Grok | PATH 또는 `~/.grok/bin`의 `grok` 명령 | `grok agent stdio`의 `_x.ai/billing` |
+| OpenCode | `~/.local/share/opencode/auth.json`의 `opencode` 또는 `opencode-go` API 키 | OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도 |
 
 로그인 갱신은 공급자마다 다릅니다.
 
