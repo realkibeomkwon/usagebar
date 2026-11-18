@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace UsageBar;
@@ -34,16 +35,22 @@ public partial class PopupWindow : Window
     /// <summary>Shows the popup with its top left at a point in screen pixels or, from the tray, with its bottom right there.</summary>
     public void ShowAt(int x, int y, bool above)
     {
-        Show(); // off screen, to measure it
+        Show(); // to measure it
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var area = SystemParameters.WorkArea;
-        double left = x / scale, top = y / scale;
-        if (above) (left, top) = (left - ActualWidth, top - ActualHeight);
-        else left -= 8; // the shadow margin, so the card lines up with the menu bar item
-        Left = Math.Clamp(left, area.Left, Math.Max(area.Left, area.Right - ActualWidth));
-        Top = Math.Clamp(top, area.Top, Math.Max(area.Top, area.Bottom - ActualHeight));
+        // Pixels on the monitor holding the point: SystemParameters.WorkArea covers the primary monitor only.
+        var area = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(x, y)).WorkingArea;
+        int w = (int)Math.Round(ActualWidth * scale), h = (int)Math.Round(ActualHeight * scale);
+        int left = x, top = y;
+        if (above) (left, top) = (left - w, top - h);
+        else left -= (int)Math.Round(8 * scale); // the shadow margin, so the card lines up with the menu bar item
+        left = Math.Clamp(left, area.Left, Math.Max(area.Left, area.Right - w));
+        top = Math.Clamp(top, area.Top, Math.Max(area.Top, area.Bottom - h));
+        SetWindowPos(new WindowInteropHelper(this).Handle, IntPtr.Zero, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010); // NOSIZE | NOZORDER | NOACTIVATE
         Activate();
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     void Render()
     {
