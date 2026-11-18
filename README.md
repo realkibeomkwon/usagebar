@@ -45,7 +45,7 @@ dotnet run -c Release
 | Claude | `~/.claude/.credentials.json`(Claude Code 로그인) | Claude OAuth 사용량 API |
 | ChatGPT | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
 | Grok | PATH 또는 `~/.grok/bin`의 `grok` 명령 | `grok agent stdio`의 `_x.ai/billing` |
-| OpenCode | `~/.local/share/opencode/auth.json`의 `opencode` 또는 `opencode-go` API 키 | OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도 |
+| OpenCode | `opencode auth export`가 보여 주는 `opencode-go`(없으면 `opencode`) API 키. 1.x는 `~/.local/share/opencode/auth.json`에서 읽습니다 | OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도 |
 
 로그인 갱신은 공급자마다 다릅니다.
 
