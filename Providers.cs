@@ -88,6 +88,9 @@ static class Providers
             "window and plan labels must read like CodexBar's");
         Debug.Assert(new[] { Logos.Claude, Logos.Codex, Logos.Grok, Logos.OpenCode, Logos.OpenCodeInner }.All(d => !System.Windows.Media.Geometry.Parse(d).Bounds.IsEmpty),
             "every logo must parse as WPF path data, which Mindows draws too");
+        Debug.Assert(OpenCodeKey(JsonNode.Parse(
+            """[{"integrationID":"opencode","active":false,"value":{"key":"old"}},{"integrationID":"opencode","active":true,"value":{}},{"integrationID":"opencode-go","active":true,"value":{"key":"go"}}]""")!.AsArray()) == "go",
+            "opencode's key must be its active Go credential, not an older one");
     }
 
     /// <summary>Every provider; the ones signed in on this PC are <see cref="Provider.Available"/>.</summary>
@@ -272,10 +275,40 @@ static class Providers
 
     const string OpenCodeLogin = "로그인이 필요합니다. 터미널에서 opencode auth login을 실행하세요.";
 
-    /// <summary>The API key opencode stores at sign-in; an opencode-go entry wins over the general opencode one.</summary>
-    // shortcut: reads only ~/.local/share/opencode/auth.json, not the SQLite credential table newer opencode builds use; add that if a login isn't found.
-    static string? OpenCodeKey()
+    static string? OpenCodeExe() => Find("opencode", Path.Combine(Home, ".opencode", "bin"));
+
+    /// <summary>
+    /// The API key opencode has for its Go plan, read through its CLI: 2.x keeps credentials in a database, so the
+    /// auth.json that 1.x wrote can still hold a key that is no longer valid. That file is the fallback for older CLIs.
+    /// </summary>
+    static async Task<string?> OpenCodeKey()
     {
+        if (OpenCodeExe() is { } exe)
+        {
+            var shim = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
+            using var process = Process.Start(new ProcessStartInfo(shim ? "cmd.exe" : exe, shim ? $"/c \"\"{exe}\" auth export\"" : "auth export")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            })!;
+            var output = process.StandardOutput.ReadToEndAsync();
+            _ = process.StandardError.ReadToEndAsync(); // drained, so a chatty failure can't fill the pipe and stall
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+                if (process.ExitCode == 0 && JsonNode.Parse(await output) is JsonArray exported) return OpenCodeKey(exported);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { } // already exited
+            }
+            catch (System.Text.Json.JsonException) { } // not the JSON this asks for; older CLI
+        }
         try
         {
             var auth = JsonNode.Parse(File.ReadAllText(Path.Combine(Home, ".local", "share", "opencode", "auth.json")));
@@ -284,13 +317,20 @@ static class Providers
         catch (Exception e) when (e is IOException or System.Text.Json.JsonException) { return null; }
     }
 
+    /// <summary>The Go key among opencode's exported credentials: active ones only, and opencode-go before plain opencode.</summary>
+    static string? OpenCodeKey(JsonArray exported) => exported
+        .Where(c => (bool?)c?["active"] == true)
+        .OrderBy(c => (string?)c?["integrationID"] == "opencode-go" ? 0 : 1)
+        .Select(c => (string?)c?["value"]?["key"])
+        .FirstOrDefault(key => key != null);
+
     static Provider OpenCode()
     {
-        static string? Exe() => Find("opencode", Path.Combine(Home, ".opencode", "bin"));
-        return new("opencode", "OpenCode", Logos.OpenCode, "#131010", "https://opencode.ai/auth", Exe, "auth login", async () =>
+        return new("opencode", "OpenCode", Logos.OpenCode, "#131010", "https://opencode.ai/auth", OpenCodeExe, "auth login", async () =>
         {
+            var token = await OpenCodeKey() ?? throw new UsageException(OpenCodeLogin);
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://opencode.ai/zen/go/v1/usage");
-            request.Headers.Authorization = new("Bearer", OpenCodeKey() ?? throw new UsageException(OpenCodeLogin));
+            request.Headers.Authorization = new("Bearer", token);
             using var response = await Http.SendAsync(request);
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) throw new UsageException(OpenCodeLogin);
             response.EnsureSuccessStatusCode();
@@ -299,7 +339,7 @@ static class Providers
             foreach (var (key, label) in new[] { ("rolling", "세션"), ("weekly", "주간"), ("monthly", "월간") })
                 if (usage[key] is { } w && w["percent"] is { } used) windows.Add(new(label, (double)used, Date(w["resetsAt"])));
             return new("Go", windows);
-        }, () => OpenCodeKey() != null) { LogoInner = Logos.OpenCodeInner };
+        }) { LogoInner = Logos.OpenCodeInner };
     }
 
     /// <summary>The CLI still answers with the old plan names; Grok's unified plans call them Super and Ultra.</summary>
