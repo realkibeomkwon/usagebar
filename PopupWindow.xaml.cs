@@ -35,7 +35,11 @@ public partial class PopupWindow : Window
     /// <summary>Shows the popup with its top left at a point in screen pixels or, from the tray, with its bottom right there.</summary>
     public void ShowAt(int x, int y, bool above)
     {
-        Show(); // to measure it
+        Show();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        // Move onto the point's monitor first, so the size measured next is at that monitor's DPI.
+        SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010); // NOSIZE | NOZORDER | NOACTIVATE
+        UpdateLayout();
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
         // Pixels on the monitor holding the point: SystemParameters.WorkArea covers the primary monitor only.
         var area = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(x, y)).WorkingArea;
@@ -45,7 +49,7 @@ public partial class PopupWindow : Window
         else left -= (int)Math.Round(8 * scale); // the shadow margin, so the card lines up with the menu bar item
         left = Math.Clamp(left, area.Left, Math.Max(area.Left, area.Right - w));
         top = Math.Clamp(top, area.Top, Math.Max(area.Top, area.Bottom - h));
-        SetWindowPos(new WindowInteropHelper(this).Handle, IntPtr.Zero, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010); // NOSIZE | NOZORDER | NOACTIVATE
+        SetWindowPos(hwnd, IntPtr.Zero, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010);
         Activate();
     }
 
