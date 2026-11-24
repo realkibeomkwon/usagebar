@@ -38,7 +38,7 @@ dotnet run -c Release
 
 - **메뉴 바에 표시**: 메뉴 바와 트레이 아이콘에 표시할지 정합니다. 메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다. 숨긴 공급자 목록은 `%LOCALAPPDATA%\UsageBar\settings.json`에 저장됩니다.
 - **상태, 요금제, 업데이트**: 마지막 갱신 결과입니다.
-- **로그인**: 새 콘솔 창에서 CLI의 로그인 명령(`claude auth login`, `codex login`, `grok login`, `opencode auth login`)을 실행합니다. 로그인에 실패하면 창이 닫히지 않고 오류를 보여 줍니다. 창이 닫히면 사용량을 다시 확인하므로, 새로 로그인한 공급자는 다시 실행하지 않아도 메뉴 바에 나타납니다.
+- **로그인**: 새 콘솔 창에서 CLI의 로그인 명령(`claude auth login`, `codex login`, `grok login`, `opencode auth login`)을 실행합니다. Antigravity는 로그인 명령이 따로 없으므로 `agy`를 실행하고, 로그인을 마친 뒤 `/exit`로 종료합니다. 로그인에 실패하면 창이 닫히지 않고 오류를 보여 줍니다. 창이 닫히면 사용량을 다시 확인하므로, 새로 로그인한 공급자는 다시 실행하지 않아도 메뉴 바에 나타납니다.
 
 | 공급자 | 조건 | 가져오는 방법 |
 |---|---|---|
@@ -46,11 +46,12 @@ dotnet run -c Release
 | ChatGPT | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
 | Grok | PATH 또는 `~/.grok/bin`의 `grok` 명령 | `grok agent stdio`의 `_x.ai/billing` |
 | OpenCode | `opencode auth export`가 보여 주는 `opencode-go`(없으면 `opencode`) API 키. 1.x는 `~/.local/share/opencode/auth.json`에서 읽습니다 | OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도 |
+| Antigravity | PATH 또는 `%LOCALAPPDATA%\agy\bin`의 `agy` 명령 | `agy -p /quota --output-format json`이 보여 주는 모델 그룹(Gemini, Claude와 GPT)별 5시간, 주간 한도. 모델을 호출하지 않습니다. agy의 로그는 갱신할 때마다 새 파일을 만들지 않도록 `%LOCALAPPDATA%\UsageBar\agy.log` 하나에 덮어씁니다 |
 
 로그인 갱신은 공급자마다 다릅니다.
 
 - Claude: 액세스 토큰(약 8시간 유효)이 만료되면 UsageBar가 Claude Code와 같은 방식으로 갱신합니다. Claude Code의 갱신 잠금(`~/.claude/.oauth_refresh.lock`과 이전 버전이 쓰는 `~/.claude.lock`)을 잡은 뒤 `.credentials.json`을 다시 읽고, 다른 프로세스가 이미 갱신하지 않았으면 리프레시 토큰으로 새 토큰을 받아 `claudeAiOauth`의 토큰 항목만 교체합니다. 그래서 부팅 직후 Claude Code나 Claude Desktop을 실행하지 않아도 사용량이 표시됩니다. 리프레시 토큰까지 만료되면 터미널에서 `claude auth login`을 실행합니다.
-- Codex, Grok: 인증 파일은 읽기만 합니다. CLI가 직접 로그인을 갱신합니다. 로그인이 만료되면 터미널에서 `codex login` 또는 `grok login`을 실행합니다.
+- Codex, Grok, Antigravity: UsageBar는 인증 파일을 수정하지 않고, CLI가 직접 로그인을 갱신합니다. 로그인이 만료되면 터미널에서 `codex login`, `grok login` 또는 `agy`를 실행합니다.
 
 메뉴 바와 트레이 아이콘의 숫자는 가장 많이 사용한 한도 창의 남은 비율입니다(CodexBar의 자동 표시 방식).
 

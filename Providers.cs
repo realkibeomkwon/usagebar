@@ -36,7 +36,7 @@ public class Provider(string id, string name, string logo, string color, string 
     /// <summary>Signed in, as far as the files and commands on this PC tell, so shown and fetched. Checked on each refresh.</summary>
     public bool Available { get; private set; } = signedIn?.Invoke() ?? exe() != null;
     public bool Installed => exe() != null;
-    public string LoginCommand => $"{id} {loginArgs}";
+    public string LoginCommand => $"{id} {loginArgs}".TrimEnd();
 
     /// <summary>The CLI's own sign-in in a console window, which stays open only if it fails; null without the CLI.</summary>
     public ProcessStartInfo? Login() => exe() is { } path ? new("cmd.exe", $"/c \"\"{path}\" {loginArgs} || pause\"") : null;
@@ -86,15 +86,19 @@ static class Providers
             && ClaudePlan("max", "default_claude_max_20x") == "Max 20x" && ClaudePlan("pro", null) == "Pro"
             && GrokPlan("SuperGrok Heavy") == "Ultra" && GrokPlan("SuperGrok") == "Super" && GrokPlan("Plus") == "Plus",
             "window and plan labels must read like CodexBar's");
-        Debug.Assert(new[] { Logos.Claude, Logos.Codex, Logos.Grok, Logos.OpenCode, Logos.OpenCodeInner }.All(d => !System.Windows.Media.Geometry.Parse(d).Bounds.IsEmpty),
+        Debug.Assert(new[] { Logos.Claude, Logos.Codex, Logos.Grok, Logos.OpenCode, Logos.OpenCodeInner, Logos.Antigravity }.All(d => !System.Windows.Media.Geometry.Parse(d).Bounds.IsEmpty),
             "every logo must parse as WPF path data, which Mindows draws too");
         Debug.Assert(OpenCodeKey(JsonNode.Parse(
             """[{"integrationID":"opencode","active":false,"value":{"key":"old"}},{"integrationID":"opencode","active":true,"value":{}},{"integrationID":"opencode-go","active":true,"value":{"key":"go"}}]""")!.AsArray()) == "go",
             "opencode's key must be its active Go credential, not an older one");
+        Debug.Assert(AntigravityWindows(JsonNode.Parse(
+            """[{"name":"Gemini Models","buckets":[{"window":"weekly","remaining_fraction":0.25,"reset_time":"2026-12-01T11:01:48Z"},{"window":"5h","remaining_fraction":1}]},{"name":"Claude and GPT models","buckets":[{"window":"5h","remaining_fraction":0.5}]}]""")!.AsArray())
+            .Select(w => $"{w.Label}={w.UsedPercent}").SequenceEqual(new[] { "주간 (Gemini)=75", "세션 (Gemini)=0", "세션 (Claude, GPT)=50" }),
+            "agy's quota groups must become one window per bucket, labeled by group");
     }
 
     /// <summary>Every provider; the ones signed in on this PC are <see cref="Provider.Available"/>.</summary>
-    public static List<Provider> All() => new() { Claude(), Codex(), Grok(), OpenCode() };
+    public static List<Provider> All() => new() { Claude(), Codex(), Grok(), OpenCode(), Antigravity() };
 
     // The credential files belong to each CLI. Codex and Grok renew their own sign-in through their CLIs; Claude Code has
     // no command for that, so Claude's is renewed here the way Claude Code itself does it.
@@ -285,28 +289,12 @@ static class Providers
     {
         if (OpenCodeExe() is { } exe)
         {
-            var shim = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
-            using var process = Process.Start(new ProcessStartInfo(shim ? "cmd.exe" : exe, shim ? $"/c \"\"{exe}\" auth export\"" : "auth export")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-            })!;
-            var output = process.StandardOutput.ReadToEndAsync();
-            _ = process.StandardError.ReadToEndAsync(); // drained, so a chatty failure can't fill the pipe and stall
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await process.WaitForExitAsync(timeout.Token);
-                if (process.ExitCode == 0 && JsonNode.Parse(await output) is JsonArray exported) return OpenCodeKey(exported);
+                var (exitCode, output) = await Output(exe, "auth export", TimeSpan.FromSeconds(10));
+                if (exitCode == 0 && JsonNode.Parse(output) is JsonArray exported) return OpenCodeKey(exported);
             }
-            catch (OperationCanceledException)
-            {
-                try { process.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) { } // already exited
-            }
+            catch (OperationCanceledException) { }
             catch (System.Text.Json.JsonException) { } // not the JSON this asks for; older CLI
         }
         try
@@ -341,6 +329,32 @@ static class Providers
             return new("Go", windows);
         }) { LogoInner = Logos.OpenCodeInner };
     }
+
+    static Provider Antigravity()
+    {
+        static string? Exe() => Find("agy", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy", "bin"));
+        // agy has no sign-in command; it asks for one when started without a prompt.
+        return new("agy", "Antigravity", Logos.Antigravity, "#60BA7E", "https://antigravity.google/", Exe, "", async () =>
+        {
+            var exe = Exe() ?? throw new UsageException("agy 명령을 찾을 수 없습니다.");
+            // /quota answers without a model turn. The log file is named so agy doesn't leave a new one per refresh.
+            var (_, output) = await Output(exe, $"-p /quota --output-format json --print-timeout 60s --log-file \"{Path.Combine(App.Dir, "agy.log")}\"",
+                TimeSpan.FromSeconds(75));
+            JsonNode? result;
+            try { result = JsonNode.Parse(output); }
+            catch (System.Text.Json.JsonException) { throw new UsageException(output.Trim() is { Length: > 0 } text ? text : "사용량 정보를 받지 못했습니다."); }
+            if (result?["command"]?["data"]?["groups"] is not JsonArray groups)
+                throw new UsageException((string?)result?["response"] is { Length: > 0 } response ? response.Trim() : "사용량 정보를 받지 못했습니다.");
+            return new(null, AntigravityWindows(groups));
+        });
+    }
+
+    /// <summary>One window per quota bucket, such as "주간 (Gemini)"; each group of models has its own 5-hour and weekly limit.</summary>
+    static List<UsageWindow> AntigravityWindows(JsonArray groups) => groups
+        .SelectMany(g => g!["buckets"]!.AsArray().Select(b => new UsageWindow(
+            $"{(string?)b!["window"] switch { "5h" => "세션", "weekly" => "주간", var w => w }} ({Regex.Replace((string)g["name"]!, @"\s+models$", "", RegexOptions.IgnoreCase).Replace(" and ", ", ")})",
+            Math.Round((1 - (double)b["remaining_fraction"]!) * 100, 1), Date(b["reset_time"]))))
+        .ToList();
 
     /// <summary>The CLI still answers with the old plan names; Grok's unified plans call them Super and Ultra.</summary>
     // shortcut: only these two are mapped, as Plus and Premium have no known CLI name yet; add them when one shows up.
@@ -377,6 +391,34 @@ static class Providers
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries).Append(fallbackDir).OfType<string>()
             .SelectMany(dir => new[] { ".exe", ".cmd" }.Select(ext => Path.Combine(dir.Trim('"'), name + ext)))
             .FirstOrDefault(File.Exists);
+
+    /// <summary>Runs a CLI to its end and returns its exit code and output; on timeout it is killed and the cancellation thrown.</summary>
+    static async Task<(int ExitCode, string Output)> Output(string exe, string args, TimeSpan timeout)
+    {
+        var shim = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
+        using var process = Process.Start(new ProcessStartInfo(shim ? "cmd.exe" : exe, shim ? $"/c \"\"{exe}\" {args}\"" : args)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+        })!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        _ = process.StandardError.ReadToEndAsync(); // drained, so a chatty failure can't fill the pipe and stall
+        using var cancel = new CancellationTokenSource(timeout);
+        try
+        {
+            await process.WaitForExitAsync(cancel.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { } // already exited
+            throw;
+        }
+        return (process.ExitCode, await output);
+    }
 
     static JsonObject Request(int id, string method, JsonObject? parameters = null) =>
         new() { ["jsonrpc"] = "2.0", ["id"] = id, ["method"] = method, ["params"] = parameters ?? new JsonObject() };
