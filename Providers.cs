@@ -31,6 +31,8 @@ public class Provider(string id, string name, string logo, string color, string 
     /// <summary>The settings icon's background when it differs from <see cref="Color"/>, which the popup's bars and the tray badge keep.</summary>
     public string? IconBackground { get; init; }
     public string IconForeground { get; init; } = "#FFFFFF";
+    /// <summary>A picture file under Assets that the settings icon shows whole, in place of the tile and mark.</summary>
+    public string? IconImage { get; init; }
     public string Dashboard => dashboard;
 
     /// <summary>Signed in, as far as the files and commands on this PC tell, so shown and fetched. Checked on each refresh.</summary>
@@ -346,7 +348,7 @@ static class Providers
             if (result?["command"]?["data"]?["groups"] is not JsonArray groups)
                 throw new UsageException((string?)result?["response"] is { Length: > 0 } response ? response.Trim() : "사용량 정보를 받지 못했습니다.");
             return new(null, AntigravityWindows(groups));
-        });
+        }) { IconImage = "antigravity.png" };
     }
 
     /// <summary>One window per quota bucket, such as "주간 (Gemini)"; each group of models has its own 5-hour and weekly limit.</summary>

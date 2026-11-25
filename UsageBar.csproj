@@ -14,6 +14,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\*.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="System.IO" />
     <!-- Windows Forms is here only for the tray icon; its names would clash with WPF's. -->
     <Using Remove="System.Windows.Forms" />

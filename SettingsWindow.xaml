@@ -114,13 +114,26 @@
         <!-- A provider's sidebar entry and page, for the tabs SettingsWindow adds after 일반. -->
         <DataTemplate x:Key="ProviderHeader">
             <StackPanel Orientation="Horizontal">
-                <Border Width="22" Height="22" CornerRadius="5" Background="{Binding Color}" Margin="0,0,8,0">
-                    <Grid Margin="4">
-                        <!-- OpenCode's mark has a gray inner shade; its path repeats the mark's outline so both paths stretch alike. -->
-                        <Path Data="{Binding Inner}" Fill="#5A5858" Stretch="Uniform"/>
-                        <Path Data="{Binding Logo}" Fill="{Binding LogoFill}" Stretch="Uniform"/>
-                    </Grid>
-                </Border>
+                <Grid Width="22" Height="22" Margin="0,0,8,0">
+                    <Border CornerRadius="5" Background="{Binding Color}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Image}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid Margin="4">
+                            <!-- OpenCode's mark has a gray inner shade; its path repeats the mark's outline so both paths stretch alike. -->
+                            <Path Data="{Binding Inner}" Fill="#5A5858" Stretch="Uniform"/>
+                            <Path Data="{Binding Logo}" Fill="{Binding LogoFill}" Stretch="Uniform"/>
+                        </Grid>
+                    </Border>
+                    <Image Source="{Binding Image}" RenderOptions.BitmapScalingMode="HighQuality"/>
+                </Grid>
                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
             </StackPanel>
         </DataTemplate>
