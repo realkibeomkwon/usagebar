@@ -18,7 +18,7 @@ namespace UsageBar;
 public partial class SettingsWindow : Window
 {
     /// <summary>A provider's sidebar entry, which never changes, so it is made once.</summary>
-    record Entry(string Name, Brush Color, Brush LogoFill, Geometry Logo, Geometry? Inner, ImageSource? Image);
+    record Entry(string Name, Brush Color, Brush LogoFill, Geometry Logo, Geometry? Inner, Brush? InnerFill, ImageSource? Image);
     record Page(Provider Provider, bool Shown, bool CanHide, string ShownNote,
         string Status, string Plan, string Updated, bool Installed, string LoginLabel, string LoginNote);
 
@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
                 new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconBackground ?? p.Color)),
                 new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconForeground)), Geometry.Parse(p.Logo),
                 p.LogoInner is { } inner ? Geometry.Parse(inner) : null,
+                p.LogoInnerColor is { } innerColor ? new SolidColorBrush((Color)ColorConverter.ConvertFromString(innerColor)) : null,
                 p.IconImage is { } image ? new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/{image}")) : null);
             Pages.Items.Add(new TabItem
             {

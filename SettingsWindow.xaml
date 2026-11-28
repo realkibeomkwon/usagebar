@@ -127,8 +127,8 @@
                             </Style>
                         </Border.Style>
                         <Grid Margin="4">
-                            <!-- OpenCode's mark has a gray inner shade; its path repeats the mark's outline so both paths stretch alike. -->
-                            <Path Data="{Binding Inner}" Fill="#5A5858" Stretch="Uniform"/>
+                            <!-- A two-tone mark's inner shade, such as OpenCode's; its path repeats the mark's outline so both paths stretch alike. -->
+                            <Path Data="{Binding Inner}" Fill="{Binding InnerFill}" Stretch="Uniform"/>
                             <Path Data="{Binding Logo}" Fill="{Binding LogoFill}" Stretch="Uniform"/>
                         </Grid>
                     </Border>

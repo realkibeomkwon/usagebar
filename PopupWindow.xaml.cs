@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -21,6 +22,8 @@ public partial class PopupWindow : Window
         Debug.Assert(Until(now.AddMinutes(218.5), now) == "3시간 38분 후 초기화" && Until(now.AddDays(2.5), now) == "2일 12시간 후 초기화"
             && Until(now.AddSeconds(20), now) == "1분 후 초기화" && Until(now.AddMinutes(-1), now) == "곧 초기화",
             "reset times must read like the menu bar's");
+        Debug.Assert(Ago(now) == "방금 업데이트" && Ago(now.AddMinutes(-90)) == "1시간 전 업데이트" && Ago(now.AddDays(-2.5)) == "2일 전 업데이트",
+            "update times must count in days past a day, as reset times do");
     }
 
     public PopupWindow(App app, Provider provider)
@@ -53,8 +56,7 @@ public partial class PopupWindow : Window
         Activate();
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     void Render()
     {
@@ -76,7 +78,8 @@ public partial class PopupWindow : Window
     internal static string Ago(DateTimeOffset at)
     {
         var minutes = (int)(DateTimeOffset.Now - at).TotalMinutes;
-        return minutes < 1 ? "방금 업데이트됨" : minutes < 60 ? $"{minutes}분 전 업데이트" : $"{minutes / 60}시간 전 업데이트";
+        return minutes < 1 ? "방금 업데이트" : minutes < 60 ? $"{minutes}분 전 업데이트"
+            : minutes < 1440 ? $"{minutes / 60}시간 전 업데이트" : $"{minutes / 1440}일 전 업데이트";
     }
 
     static string Until(DateTimeOffset at, DateTimeOffset now)

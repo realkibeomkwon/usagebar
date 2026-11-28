@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -26,8 +27,9 @@ public class Provider(string id, string name, string logo, string color, string 
     /// <summary>WPF path data for the provider's mark.</summary>
     public string Logo => logo;
     public string Color => color;
-    /// <summary>WPF path data for a second shade of the mark, drawn under it; null for a one-tone mark.</summary>
+    /// <summary>WPF path data for a second shade of the mark, drawn under it in <see cref="LogoInnerColor"/>; null for a one-tone mark.</summary>
     public string? LogoInner { get; init; }
+    public string? LogoInnerColor { get; init; }
     /// <summary>The settings icon's background when it differs from <see cref="Color"/>, which the popup's bars and the tray badge keep.</summary>
     public string? IconBackground { get; init; }
     public string IconForeground { get; init; } = "#FFFFFF";
@@ -72,7 +74,10 @@ public class Provider(string id, string name, string logo, string color, string 
             {
                 UsageException => e.Message,
                 OperationCanceledException => "응답 시간이 초과됐습니다.",
+                HttpRequestException { StatusCode: { } status } => $"서버 오류: HTTP {(int)status}",
                 HttpRequestException => $"네트워크 오류: {e.Message}",
+                // A missing or retyped field, or a body that isn't JSON: the CLI or API changed its answer.
+                NullReferenceException or InvalidOperationException or FormatException or System.Text.Json.JsonException => "응답 형식이 예상과 다릅니다.",
                 _ => e.Message,
             };
         }
@@ -84,6 +89,7 @@ static class Providers
 {
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
     static readonly string Home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    const string NoUsage = "사용량 정보를 받지 못했습니다.";
 
     static Providers()
     {
@@ -179,7 +185,8 @@ static class Providers
             // Written next to the file and swapped in, so a reader never sees half a file and the file keeps its permissions.
             var temp = file + ".usagebar";
             await File.WriteAllTextAsync(temp, root.ToJsonString());
-            // The server may have retired the old refresh token already, so the new one must not stay behind in the temp file.
+            // The server may have retired the old refresh token already, so the new one is retried into the file; if every
+            // attempt fails, it stays in the temp file rather than being lost.
             for (var attempt = 0; ; attempt++)
             {
                 try
@@ -211,14 +218,14 @@ static class Providers
     }
 
     /// <summary>Unlike Directory.CreateDirectory, fails when the directory exists, which is what makes it a lock.</summary>
-    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-    static extern bool CreateDirectory(string path, IntPtr securityAttributes);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateDirectory(string path, IntPtr securityAttributes);
 
     static Provider Codex()
     {
-        return new("codex", "ChatGPT", Logos.Codex, "#10A37F", "https://chatgpt.com/codex/settings/usage", () => Find("codex"), "login", async () =>
+        static string? Exe() => Find("codex");
+        return new("codex", "ChatGPT", Logos.Codex, "#10A37F", "https://chatgpt.com/codex/settings/usage", Exe, "login", async () =>
         {
-            var exe = Find("codex") ?? throw new UsageException("codex 명령을 찾을 수 없습니다.");
+            var exe = Exe() ?? throw new UsageException("codex 명령을 찾을 수 없습니다.");
             JsonNode result;
             try
             {
@@ -232,7 +239,7 @@ static class Providers
             {
                 throw new UsageException("로그인이 필요합니다. 터미널에서 codex login을 실행하세요.");
             }
-            var limits = result["rateLimits"] ?? throw new UsageException("사용량 정보를 받지 못했습니다.");
+            var limits = result["rateLimits"] ?? throw new UsageException(NoUsage);
             var windows = new[] { limits["primary"], limits["secondary"] }.OfType<JsonNode>().Select(w => new UsageWindow(
                 WindowLabel((int?)w["windowDurationMins"]), (double)w["usedPercent"]!,
                 w["resetsAt"] is { } at ? DateTimeOffset.FromUnixTimeSeconds((long)at) : null)).ToList();
@@ -268,7 +275,7 @@ static class Providers
             }
             // shortcut: reads only the current credits payload, not the older monthlyLimit/usage one, and leaves the
             // percentage unknown when a new week's payload omits it; CodexBar asks grok.com then, add that if it shows up.
-            var config = result["config"] ?? throw new UsageException("사용량 정보를 받지 못했습니다.");
+            var config = result["config"] ?? throw new UsageException(NoUsage);
             var period = config["currentPeriod"];
             var label = (string?)period?["type"] switch
             {
@@ -334,12 +341,12 @@ static class Providers
                 throw new UsageException(OpenCodeLogin);
             }
             response.EnsureSuccessStatusCode();
-            var usage = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["usage"] ?? throw new UsageException("사용량 정보를 받지 못했습니다.");
+            var usage = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["usage"] ?? throw new UsageException(NoUsage);
             var windows = new List<UsageWindow>();
             foreach (var (key, label) in new[] { ("rolling", "세션"), ("weekly", "주간"), ("monthly", "월간") })
                 if (usage[key] is { } w && w["percent"] is { } used) windows.Add(new(label, (double)used, Date(w["resetsAt"])));
             return new("Go", windows);
-        }) { LogoInner = Logos.OpenCodeInner };
+        }) { LogoInner = Logos.OpenCodeInner, LogoInnerColor = "#5A5858" };
     }
 
     static Provider Antigravity()
@@ -363,9 +370,9 @@ static class Providers
                 TimeSpan.FromSeconds(75));
             JsonNode? result;
             try { result = JsonNode.Parse(output); }
-            catch (System.Text.Json.JsonException) { throw new UsageException(output.Trim() is { Length: > 0 } text ? text : "사용량 정보를 받지 못했습니다."); }
+            catch (System.Text.Json.JsonException) { throw new UsageException(output.Trim() is { Length: > 0 } text ? text : NoUsage); }
             if (result?["command"]?["data"]?["groups"] is not JsonArray groups)
-                throw new UsageException((string?)result?["response"] is { Length: > 0 } response ? response.Trim() : "사용량 정보를 받지 못했습니다.");
+                throw new UsageException((string?)result?["response"] is { Length: > 0 } response ? response.Trim() : NoUsage);
             return new(null, AntigravityWindows(groups));
         }) { IconImage = "antigravity.png" };
     }
@@ -480,7 +487,7 @@ static class Providers
                     break;
                 }
             }
-            return result ?? throw new UsageException("사용량 정보를 받지 못했습니다.");
+            return result ?? throw new UsageException(NoUsage);
         }
         finally
         {
