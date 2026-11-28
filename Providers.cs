@@ -339,6 +339,15 @@ static class Providers
         return new("agy", "Antigravity", Logos.Antigravity, "#60BA7E", "https://antigravity.google/", Exe, "", async () =>
         {
             var exe = Exe() ?? throw new UsageException("agy 명령을 찾을 수 없습니다.");
+            // agy's updater checks again once this file is 15 minutes old, and the process it starts then opens a console window.
+            // shortcut: agy then updates only through `agy update`; drop this when agy can turn its updater off or hide that window.
+            var lastCheck = Path.Combine(Home, ".gemini", "antigravity-cli", "last_check.timestamp");
+            try
+            {
+                File.Open(lastCheck, FileMode.OpenOrCreate).Dispose();
+                File.SetLastWriteTimeUtc(lastCheck, DateTime.UtcNow);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // agy never ran yet, or the file is locked: it may check once
             // /quota answers without a model turn. The log file is named so agy doesn't leave a new one per refresh.
             var (_, output) = await Output(exe, $"-p /quota --output-format json --print-timeout 60s --log-file \"{Path.Combine(App.Dir, "agy.log")}\"",
                 TimeSpan.FromSeconds(75));

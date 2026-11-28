@@ -46,7 +46,7 @@ dotnet run -c Release
 | ChatGPT | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
 | Grok | PATH 또는 `~/.grok/bin`의 `grok` 명령 | `grok agent stdio`의 `_x.ai/billing` |
 | OpenCode | `opencode auth export`가 보여 주는 `opencode-go`(없으면 `opencode`) API 키. 1.x는 `~/.local/share/opencode/auth.json`에서 읽습니다 | OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도 |
-| Antigravity | PATH 또는 `%LOCALAPPDATA%\agy\bin`의 `agy` 명령 | `agy -p /quota --output-format json`이 보여 주는 모델 그룹(Gemini, Claude와 GPT)별 5시간, 주간 한도. 모델을 호출하지 않습니다. agy의 로그는 갱신할 때마다 새 파일을 만들지 않도록 `%LOCALAPPDATA%\UsageBar\agy.log` 하나에 덮어씁니다 |
+| Antigravity | PATH 또는 `%LOCALAPPDATA%\agy\bin`의 `agy` 명령 | `agy -p /quota --output-format json`이 보여 주는 모델 그룹(Gemini, Claude와 GPT)별 5시간, 주간 한도. 모델을 호출하지 않습니다. agy의 로그는 갱신할 때마다 새 파일을 만들지 않도록 `%LOCALAPPDATA%\UsageBar\agy.log` 하나에 덮어씁니다. agy의 자동 업데이트는 확인할 때마다 콘솔 창을 잠깐 띄우므로, 갱신 직전에 agy의 마지막 확인 시각(`%USERPROFILE%\.gemini\antigravity-cli\last_check.timestamp`)을 지금으로 바꿔 확인을 건너뛰게 합니다. 따라서 agy는 터미널에서 `agy update`로 직접 업데이트합니다 |
 
 로그인 갱신은 공급자마다 다릅니다.
 
