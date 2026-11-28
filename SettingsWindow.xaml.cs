@@ -10,13 +10,16 @@ using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Win32;
 
 namespace UsageBar;
 
 /// <summary>UsageBar's settings, as Mindows' and CodexBar's providers pane: 일반, then a sidebar category per provider. Changes apply and save at once.</summary>
 public partial class SettingsWindow : Window
 {
-    record Page(Provider Provider, string Name, Brush Color, Brush LogoFill, Geometry Logo, Geometry? Inner, ImageSource? Image, bool Shown, bool CanHide, string ShownNote,
+    /// <summary>A provider's sidebar entry, which never changes, so it is made once.</summary>
+    record Entry(string Name, Brush Color, Brush LogoFill, Geometry Logo, Geometry? Inner, ImageSource? Image);
+    record Page(Provider Provider, bool Shown, bool CanHide, string ShownNote,
         string Status, string Plan, string Updated, bool Installed, string LoginLabel, string LoginNote);
 
     const string TaskName = "UsageBar";
@@ -37,8 +40,19 @@ public partial class SettingsWindow : Window
     {
         this.app = app;
         InitializeComponent();
-        foreach (var _ in app.AllProviders)
-            Pages.Items.Add(new TabItem { HeaderTemplate = (DataTemplate)Resources["ProviderHeader"], ContentTemplate = (DataTemplate)Resources["ProviderPage"] });
+        foreach (var p in app.AllProviders)
+        {
+            var entry = new Entry(p.Name,
+                new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconBackground ?? p.Color)),
+                new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconForeground)), Geometry.Parse(p.Logo),
+                p.LogoInner is { } inner ? Geometry.Parse(inner) : null,
+                p.IconImage is { } image ? new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/{image}")) : null);
+            Pages.Items.Add(new TabItem
+            {
+                HeaderTemplate = (DataTemplate)Resources["ProviderHeader"], ContentTemplate = (DataTemplate)Resources["ProviderPage"],
+                DataContext = entry, Header = entry,
+            });
+        }
         // The task itself is the setting, as in Mindows, so nothing keeps a copy that could drift from it.
         LaunchAtLogin.IsChecked = LogonTaskExists();
         Render();
@@ -48,32 +62,31 @@ public partial class SettingsWindow : Window
             app.Refreshed -= Render;
             open = null;
         };
-        SourceInitialized += (_, _) =>
-        {
-            var dark = App.LightTheme ? 0 : 1;
-            DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int)); // DWMWA_USE_IMMERSIVE_DARK_MODE
-        };
+        SourceInitialized += (_, _) => ApplyTitleBar();
+    }
+
+    /// <summary>The open window's title bar in the app's theme, light or dark.</summary>
+    public static void ApplyTitleBar()
+    {
+        if (open == null) return;
+        var dark = App.LightTheme ? 0 : 1;
+        DwmSetWindowAttribute(new WindowInteropHelper(open).Handle, 20, ref dark, sizeof(int)); // DWMWA_USE_IMMERSIVE_DARK_MODE
     }
 
     void Render()
     {
-        var pages = app.AllProviders.Select(p => new Page(p, p.Name,
-            new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconBackground ?? p.Color)),
-            new SolidColorBrush((Color)ColorConverter.ConvertFromString(p.IconForeground)), Geometry.Parse(p.Logo),
-            p.LogoInner is { } inner ? Geometry.Parse(inner) : null,
-            p.IconImage is { } image ? new System.Windows.Media.Imaging.BitmapImage(new Uri($"pack://application:,,,/Assets/{image}")) : null,
-            app.IsShown(p), !app.IsLastShown(p),
-            KeepWords(app.IsLastShown(p) ? "메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다." : !p.Available && app.IsShown(p) ? "로그인하면 표시됩니다." : ""),
-            KeepWords(!p.Available ? (p.Installed ? "로그인되어 있지 않습니다." : $"{p.Id} 명령을 찾을 수 없습니다.")
-                : app.Refreshing ? "확인 중..." : p.Error ?? (p.Usage != null ? "로그인됨" : "아직 확인하지 않음")),
-            p.Usage?.Plan ?? "–",
-            app.Refreshing ? "업데이트 중..." : p.UpdatedAt is { } at ? PopupWindow.Ago(at) : "–",
-            p.Installed, p.Available ? "다시 로그인" : "로그인",
-            p.Installed ? $"터미널에서 {p.LoginCommand} 명령을 실행합니다." : $"{p.Id} 명령을 설치한 뒤 로그인할 수 있습니다.")).ToList();
-        for (var i = 0; i < pages.Count; i++)
+        for (var i = 0; i < app.AllProviders.Count; i++)
         {
-            var tab = (TabItem)Pages.Items[i + 1]; // after 일반
-            tab.DataContext = tab.Header = tab.Content = pages[i];
+            var p = app.AllProviders[i];
+            var (installed, last) = (p.Installed, app.IsLastShown(p)); // Installed searches PATH
+            ((TabItem)Pages.Items[i + 1]).Content = new Page(p, app.IsShown(p), !last, // after 일반
+                KeepWords(last ? "메뉴 바에 마지막으로 남은 항목은 숨길 수 없습니다." : !p.Available && app.IsShown(p) ? "로그인하면 표시됩니다." : ""),
+                KeepWords(!p.Available ? (installed ? "로그인되어 있지 않습니다." : $"{p.Id} 명령을 찾을 수 없습니다.")
+                    : p.Refreshing ? "확인 중..." : p.Error ?? (p.Usage != null ? "로그인됨" : "아직 확인하지 않음")),
+                p.Usage?.Plan ?? "–",
+                p.Refreshing ? "업데이트 중..." : p.UpdatedAt is { } at ? PopupWindow.Ago(at) : "–",
+                installed, p.Available ? "다시 로그인" : "로그인",
+                installed ? $"터미널에서 {p.LoginCommand} 명령을 실행합니다." : $"{p.Id} 명령을 설치한 뒤 로그인할 수 있습니다.");
         }
     }
 
@@ -82,13 +95,25 @@ public partial class SettingsWindow : Window
 
     void LaunchAtLogin_Click(object sender, RoutedEventArgs e)
     {
-        if (LaunchAtLogin.IsChecked == true) TaskFolder().RegisterTask(TaskName, LogonTaskXml(), 6 /* CREATE_OR_UPDATE */, null, null, 3 /* INTERACTIVE_TOKEN */);
-        else if (LogonTaskExists()) TaskFolder().DeleteTask(TaskName, 0);
+        try
+        {
+            if (LaunchAtLogin.IsChecked == true) TaskFolder().RegisterTask(TaskName, LogonTaskXml(), 6 /* CREATE_OR_UPDATE */, null, null, 3 /* INTERACTIVE_TOKEN */);
+            else if (LogonTaskExists()) TaskFolder().DeleteTask(TaskName, 0);
+        }
+        finally { LaunchAtLogin.IsChecked = LogonTaskExists(); } // a change that failed shows as not made
     }
 
-    /// <summary>Points an existing logon task at this exe, so it follows UsageBar from a dev build to the installed copy.</summary>
+    /// <summary>
+    /// Points an existing logon task at this exe, so it follows UsageBar from a dev build to the installed copy.
+    /// While UsageBar is installed only the installed copy does it, so running a dev build leaves the task alone.
+    /// </summary>
     public static void UpdateLogonTask()
     {
+        // The setup's uninstall entry, named after AppId in installer\UsageBar.iss.
+        var installed = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Uninstall\{3868A677-6A78-4E23-B137-F427D6881E56}_is1",
+            "InstallLocation", null) as string;
+        if (installed != null && !string.Equals(Path.TrimEndingDirectorySeparator(installed), Path.GetDirectoryName(Environment.ProcessPath),
+            StringComparison.OrdinalIgnoreCase)) return;
         if (LogonTaskExists()) TaskFolder().RegisterTask(TaskName, LogonTaskXml(), 6 /* CREATE_OR_UPDATE */, null, null, 3 /* INTERACTIVE_TOKEN */);
     }
 

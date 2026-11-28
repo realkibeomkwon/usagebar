@@ -46,6 +46,7 @@ public class Provider(string id, string name, string logo, string color, string 
     public Usage? Usage { get; private set; }
     public string? Error { get; private set; }
     public DateTimeOffset? UpdatedAt { get; private set; }
+    public bool Refreshing { get; private set; }
 
     /// <summary>The percentage left in the most used window, CodexBar's automatic menu bar number.</summary>
     // shortcut: CodexBar first ranks windows on track to run out before their reset; add that pace estimate if this misleads.
@@ -59,6 +60,7 @@ public class Provider(string id, string name, string logo, string color, string 
             (Usage, Error, UpdatedAt) = (null, null, null);
             return;
         }
+        Refreshing = true;
         try
         {
             Usage = await fetch();
@@ -74,6 +76,7 @@ public class Provider(string id, string name, string logo, string color, string 
                 _ => e.Message,
             };
         }
+        finally { Refreshing = false; }
     }
 }
 
@@ -316,13 +319,20 @@ static class Providers
 
     static Provider OpenCode()
     {
+        // shortcut: read once and again only when the API refuses it, so a sign-out, or another account's key while the old one
+        // still works, shows only after a restart; read it on every refresh if that matters.
+        string? key = null;
         return new("opencode", "OpenCode", Logos.OpenCode, "#131010", "https://opencode.ai/auth", OpenCodeExe, "auth login", async () =>
         {
-            var token = await OpenCodeKey() ?? throw new UsageException(OpenCodeLogin);
+            var token = key ??= await OpenCodeKey() ?? throw new UsageException(OpenCodeLogin);
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://opencode.ai/zen/go/v1/usage");
             request.Headers.Authorization = new("Bearer", token);
             using var response = await Http.SendAsync(request);
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) throw new UsageException(OpenCodeLogin);
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                key = null;
+                throw new UsageException(OpenCodeLogin);
+            }
             response.EnsureSuccessStatusCode();
             var usage = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["usage"] ?? throw new UsageException("사용량 정보를 받지 못했습니다.");
             var windows = new List<UsageWindow>();
@@ -403,18 +413,25 @@ static class Providers
             .SelectMany(dir => new[] { ".exe", ".cmd" }.Select(ext => Path.Combine(dir.Trim('"'), name + ext)))
             .FirstOrDefault(File.Exists);
 
-    /// <summary>Runs a CLI to its end and returns its exit code and output; on timeout it is killed and the cancellation thrown.</summary>
-    static async Task<(int ExitCode, string Output)> Output(string exe, string args, TimeSpan timeout)
+    /// <summary>A CLI started without a window, its output read as UTF-8: an exe, or an npm .cmd shim through cmd.</summary>
+    static ProcessStartInfo Cli(string exe, string args)
     {
         var shim = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
-        using var process = Process.Start(new ProcessStartInfo(shim ? "cmd.exe" : exe, shim ? $"/c \"\"{exe}\" {args}\"" : args)
+        return new(shim ? "cmd.exe" : exe, shim ? $"/c \"\"{exe}\" {args}\"" : args)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8,
-        })!;
+        };
+    }
+
+    /// <summary>Runs a CLI to its end and returns its exit code and output; on timeout it is killed and the cancellation thrown.</summary>
+    static async Task<(int ExitCode, string Output)> Output(string exe, string args, TimeSpan timeout)
+    {
+        var start = Cli(exe, args);
+        start.RedirectStandardError = true;
+        using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEndAsync();
         _ = process.StandardError.ReadToEndAsync(); // drained, so a chatty failure can't fill the pipe and stall
         using var cancel = new CancellationTokenSource(timeout);
@@ -440,16 +457,9 @@ static class Providers
     /// </summary>
     static async Task<JsonNode> Rpc(string exe, string args, params JsonObject[] messages)
     {
-        var shim = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
-        var start = new ProcessStartInfo(shim ? "cmd.exe" : exe, shim ? $"/c \"\"{exe}\" {args}\"" : args)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            StandardInputEncoding = new UTF8Encoding(false),
-            StandardOutputEncoding = Encoding.UTF8,
-        };
+        var start = Cli(exe, args);
+        start.RedirectStandardInput = true;
+        start.StandardInputEncoding = new UTF8Encoding(false);
         using var process = Process.Start(start)!;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try

@@ -60,7 +60,7 @@ public partial class PopupWindow : Window
     {
         ProviderName.Text = provider.Name;
         Plan.Text = provider.Usage?.Plan ?? "";
-        Updated.Text = app.Refreshing ? "업데이트 중..." : provider.UpdatedAt is { } at ? Ago(at) : "아직 업데이트되지 않음";
+        Updated.Text = provider.Refreshing ? "업데이트 중..." : provider.UpdatedAt is { } at ? Ago(at) : "아직 업데이트되지 않음";
         var fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(provider.Color));
         Windows.ItemsSource = provider.Usage?.Windows.Select(w =>
         {

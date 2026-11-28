@@ -23,7 +23,7 @@ dotnet run -c Release
 - 관리자 권한 없이 현재 사용자의 `%LOCALAPPDATA%\Programs\UsageBar`에 설치됩니다. .NET 런타임이 포함되어 있으므로 따로 설치하지 않아도 됩니다.
 - 시작 메뉴에 바로 가기가 생기고, 설치 앱 목록에서 제거할 수 있습니다. UsageBar가 실행 중이면 설치 및 제거 전에 종료하라고 안내합니다.
 - 제거하면 **로그인 시 자동 실행** 작업도 삭제됩니다. `%LOCALAPPDATA%\UsageBar`의 설정은 남겨 둡니다.
-- UsageBar는 시작할 때 **로그인 시 자동 실행** 작업이 있으면 그 작업이 지금 실행 중인 UsageBar.exe를 가리키도록 갱신합니다. 그래서 개발 빌드에서 켜 둔 설정도 설치한 UsageBar를 처음 실행하면 설치 경로로 옮겨 갑니다.
+- UsageBar는 시작할 때 **로그인 시 자동 실행** 작업이 있으면 그 작업이 지금 실행 중인 UsageBar.exe를 가리키도록 갱신합니다. 그래서 개발 빌드에서 켜 둔 설정도 설치한 UsageBar를 처음 실행하면 설치 경로로 옮겨 갑니다. UsageBar가 설치되어 있는 동안에는 설치한 UsageBar만 이 작업을 갱신하므로, 개발 빌드를 실행해도 작업이 개발 빌드로 옮겨 가지 않습니다. 단, 개발 빌드의 설정 창에서 이 설정을 다시 켜면 작업이 개발 빌드를 가리키게 되며, 설치한 UsageBar를 다음에 실행할 때 설치 경로로 돌아갑니다.
 - 코드 서명을 하지 않았으므로 처음 실행할 때 SmartScreen 경고가 표시될 수 있습니다.
 
 ## 공급자
@@ -52,7 +52,7 @@ dotnet run -c Release
 
 - Claude: 액세스 토큰(약 8시간 유효)이 만료되면 UsageBar가 Claude Code와 같은 방식으로 갱신합니다. Claude Code의 갱신 잠금(`~/.claude/.oauth_refresh.lock`과 이전 버전이 쓰는 `~/.claude.lock`)을 잡은 뒤 `.credentials.json`을 다시 읽고, 다른 프로세스가 이미 갱신하지 않았으면 리프레시 토큰으로 새 토큰을 받아 `claudeAiOauth`의 토큰 항목만 교체합니다. 그래서 부팅 직후 Claude Code나 Claude Desktop을 실행하지 않아도 사용량이 표시됩니다. 리프레시 토큰까지 만료되면 터미널에서 `claude auth login`을 실행합니다.
 - Codex, Grok, Antigravity: UsageBar는 인증 파일을 수정하지 않고, CLI가 직접 로그인을 갱신합니다. 로그인이 만료되면 터미널에서 `codex login`, `grok login` 또는 `agy`를 실행합니다.
-- OpenCode: UsageBar는 API 키를 읽기만 하고 갱신하지 않습니다. 사용량 API가 키를 거부하면 터미널에서 `opencode auth login`을 실행합니다.
+- OpenCode: UsageBar는 API 키를 읽기만 하고 갱신하지 않습니다. 키는 한 번 읽어 두고 사용량 API가 거부할 때만 다시 읽으므로, 로그아웃하거나 이전 키가 유효한 상태에서 다른 계정으로 로그인하면 UsageBar를 다시 시작해야 반영됩니다. 사용량 API가 키를 거부하면 터미널에서 `opencode auth login`을 실행합니다.
 
 메뉴 바와 트레이 아이콘의 숫자는 가장 많이 사용한 한도 창의 남은 비율입니다(CodexBar의 자동 표시 방식).
 

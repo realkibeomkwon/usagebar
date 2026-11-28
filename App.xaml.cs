@@ -35,10 +35,11 @@ public partial class App : Application
 
     public static bool LightTheme { get; private set; }
     public bool Refreshing { get; private set; }
-    /// <summary>Raised when a refresh starts and when it ends.</summary>
+    /// <summary>Raised when a refresh starts, as each provider answers, and when it ends.</summary>
     public event Action? Refreshed;
     /// <summary>Asked for during a refresh, such as by a sign-in that ended after the refresh had checked that provider.</summary>
     bool refreshAgain;
+    bool started;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -49,12 +50,17 @@ public partial class App : Application
             Shutdown();
             return;
         }
-        DispatcherUnhandledException += (_, a) => Log(a.Exception);
+        DispatcherUnhandledException += (_, a) =>
+        {
+            Log(a.Exception);
+            a.Handled = started; // once running, one failed action must not take the tray icons down; a failed start still ends
+        };
         AppDomain.CurrentDomain.UnhandledException += (_, a) => Log(a.ExceptionObject);
         try { SettingsWindow.UpdateLogonTask(); }
         catch (Exception ex) { Log(ex); }
 
         ApplyTheme();
+        SystemEvents.UserPreferenceChanged += (_, _) => Dispatcher.InvokeAsync(ApplyTheme);
         messages = new HwndSource(new HwndSourceParameters("UsageBar") { ParentWindow = new IntPtr(-3) }); // HWND_MESSAGE
         messages.AddHook(WndProc);
         // Mindows leaves these out of its menu bar and draws its own items from the status file.
@@ -73,6 +79,7 @@ public partial class App : Application
             if (a.IsAvailable) Dispatcher.InvokeAsync(Refresh);
         };
         _ = Refresh();
+        started = true;
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -94,26 +101,36 @@ public partial class App : Application
             return;
         }
         Refreshing = true;
-        Refreshed?.Invoke();
-        try { await Task.WhenAll(providers.Select(p => p.Refresh())); }
-        finally { Refreshing = false; }
-        for (var i = 0; i < providers.Count; i++)
+        // Each provider shows as soon as it answers, so a slow one (agy can take 75 s) holds back only itself.
+        var refreshes = providers.Select(async (p, i) =>
         {
-            var (p, icon) = (providers[i], trayIcons[i]);
-            var old = icon.Icon;
-            icon.Icon = Badge(p);
-            old?.Dispose();
-            icon.Visible = TrayVisible(p); // a provider signed in or out since
-            var tip = p.Remaining is { } left ? $"{p.Name}: {left:0}% 남음" : $"{p.Name}: {p.Error ?? "사용량 없음"}";
-            icon.Text = tip.Length > 127 ? tip[..127] : tip; // the most a tray tooltip holds
-        }
-        Publish();
+            await p.Refresh();
+            ShowUsage(i);
+        }).ToList();
+        Refreshed?.Invoke(); // after each provider has marked itself refreshing
+        try { await Task.WhenAll(refreshes); }
+        finally { Refreshing = false; }
         Refreshed?.Invoke();
         if (refreshAgain)
         {
             refreshAgain = false;
             await Refresh();
         }
+    }
+
+    /// <summary>A provider's new usage in its tray icon and the status file.</summary>
+    void ShowUsage(int i)
+    {
+        var (p, icon) = (providers[i], trayIcons[i]);
+        var old = icon.Icon;
+        icon.Icon = Badge(p);
+        old?.Dispose();
+        var tip = p.Remaining is { } left ? $"{p.Name}: {left:0}% 남음" : $"{p.Name}: {p.Error ?? "사용량 없음"}";
+        icon.Text = tip.Length > 127 ? tip[..127] : tip; // the most a tray tooltip holds
+        // Every icon: one provider signing in or out can show or hide the others.
+        for (var j = 0; j < providers.Count; j++) trayIcons[j].Visible = TrayVisible(providers[j]);
+        Publish();
+        Refreshed?.Invoke();
     }
 
     public IReadOnlyList<Provider> AllProviders => providers;
@@ -132,7 +149,7 @@ public partial class App : Application
         else hidden.Add(p.Id);
         for (var i = 0; i < providers.Count; i++) trayIcons[i].Visible = TrayVisible(providers[i]);
         try { File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new { hidden })); }
-        catch (IOException e) { Log(e); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log(e); }
         Publish();
     }
 
@@ -168,7 +185,7 @@ public partial class App : Application
             File.WriteAllText(temp, JsonSerializer.Serialize(status));
             File.Move(temp, StatusPath, overwrite: true);
         }
-        catch (IOException e) { Log(e); } // Mindows was reading it; the next refresh writes it again
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log(e); } // Mindows was reading it; the next refresh writes it again
     }
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -222,11 +239,13 @@ public partial class App : Application
         finally { DestroyIcon(handle); }
     }
 
-    /// <summary>Mindows' menu colors, so the popup matches its menus.</summary>
+    /// <summary>Mindows' menu colors, so the popup matches its menus; applied again when Windows switches between light and dark.</summary>
     void ApplyTheme()
     {
-        LightTheme = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        var light = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
             "SystemUsesLightTheme", 0) is 1;
+        if (light == LightTheme && Resources.Contains("MenuBg")) return; // already in this theme: some other preference changed
+        LightTheme = light;
         // WindowBg, PaneBg and CardBg are Mindows' settings window colors, opaque: normal (non-layered) windows draw translucent backgrounds over black.
         var colors = LightTheme
             ? new[] { "#F2F6F6F6", "#FF1C1C1C", "#22000000", "#1F000000", "#1A000000", "#FFFFFFFF", "#FFF1EFEE", "#FFF7F7F7" }
@@ -238,6 +257,7 @@ public partial class App : Application
             brush.Freeze();
             Resources[keys[i]] = brush;
         }
+        SettingsWindow.ApplyTitleBar();
     }
 
     static void Log(object error)

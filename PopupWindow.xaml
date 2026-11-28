@@ -6,8 +6,18 @@
         Left="-20000" Top="-20000" Deactivated="Window_Deactivated" KeyDown="Window_KeyDown"
         Foreground="{DynamicResource MenuFg}" FontFamily="{StaticResource UiFont}" FontSize="13">
     <Window.Resources>
+        <!-- Drawn only when a key moved the focus, so Tab and the arrow keys show where they are and a click shows nothing. -->
+        <Style x:Key="MenuFocus">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border CornerRadius="5" BorderThickness="2" BorderBrush="{StaticResource Accent}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="MenuButton" TargetType="Button">
-            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource MenuFocus}"/>
             <Setter Property="Foreground" Value="{DynamicResource MenuFg}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -48,7 +58,7 @@
                     </DockPanel>
                     <TextBlock x:Name="Updated" Style="{StaticResource Dim}" Margin="0,2,0,0"/>
                     <Border Height="1" Background="{DynamicResource MenuBorder}" Margin="0,10"/>
-                    <ItemsControl x:Name="Windows">
+                    <ItemsControl x:Name="Windows" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,12">
@@ -73,19 +83,12 @@
                     <TextBlock x:Name="Error" Foreground="#E5484D" TextWrapping="Wrap" Margin="0,0,0,10" Visibility="Collapsed"/>
                     <Border Height="1" Background="{DynamicResource MenuBorder}" Margin="0,0,0,6"/>
                 </StackPanel>
-                <Button x:Name="RefreshButton" Style="{StaticResource MenuButton}" Click="Refresh_Click">
-                    <TextBlock Text="새로 고침"/>
-                </Button>
-                <Button Style="{StaticResource MenuButton}" Click="Dashboard_Click">
-                    <TextBlock Text="사용량 대시보드"/>
-                </Button>
+                <!-- Text content, which screen readers read as each button's name. -->
+                <Button x:Name="RefreshButton" Style="{StaticResource MenuButton}" Content="새로 고침" Click="Refresh_Click"/>
+                <Button Style="{StaticResource MenuButton}" Content="사용량 대시보드" Click="Dashboard_Click"/>
                 <Border Height="1" Background="{DynamicResource MenuBorder}" Margin="10,6"/>
-                <Button Style="{StaticResource MenuButton}" Click="Settings_Click">
-                    <TextBlock Text="UsageBar 설정"/>
-                </Button>
-                <Button Style="{StaticResource MenuButton}" Click="Quit_Click">
-                    <TextBlock Text="UsageBar 종료"/>
-                </Button>
+                <Button Style="{StaticResource MenuButton}" Content="UsageBar 설정" Click="Settings_Click"/>
+                <Button Style="{StaticResource MenuButton}" Content="UsageBar 종료" Click="Quit_Click"/>
             </StackPanel>
         </Border>
     </Grid>
