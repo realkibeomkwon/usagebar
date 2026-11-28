@@ -11,6 +11,8 @@
     <Version>1.0.0</Version>
     <!-- Per-monitor DPI like Mindows, whose popup coordinates are physical pixels. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WFO0003 wants WinForms' ApplicationHighDpiMode, which only WinForms' own startup applies; the WPF windows need the manifest. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -37,6 +37,8 @@ public partial class App : Application
     public bool Refreshing { get; private set; }
     /// <summary>Raised when a refresh starts and when it ends.</summary>
     public event Action? Refreshed;
+    /// <summary>Asked for during a refresh, such as by a sign-in that ended after the refresh had checked that provider.</summary>
+    bool refreshAgain;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -86,7 +88,11 @@ public partial class App : Application
 
     public async Task Refresh()
     {
-        if (Refreshing) return;
+        if (Refreshing)
+        {
+            refreshAgain = true;
+            return;
+        }
         Refreshing = true;
         Refreshed?.Invoke();
         try { await Task.WhenAll(providers.Select(p => p.Refresh())); }
@@ -103,6 +109,11 @@ public partial class App : Application
         }
         Publish();
         Refreshed?.Invoke();
+        if (refreshAgain)
+        {
+            refreshAgain = false;
+            await Refresh();
+        }
     }
 
     public IReadOnlyList<Provider> AllProviders => providers;

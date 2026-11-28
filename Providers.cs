@@ -56,7 +56,7 @@ public class Provider(string id, string name, string logo, string color, string 
         Available = signedIn?.Invoke() ?? exe() != null;
         if (!Available)
         {
-            (Usage, Error) = (null, null);
+            (Usage, Error, UpdatedAt) = (null, null, null);
             return;
         }
         try

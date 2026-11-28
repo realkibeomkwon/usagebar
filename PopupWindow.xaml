@@ -74,7 +74,7 @@
                     <Border Height="1" Background="{DynamicResource MenuBorder}" Margin="0,0,0,6"/>
                 </StackPanel>
                 <Button x:Name="RefreshButton" Style="{StaticResource MenuButton}" Click="Refresh_Click">
-                    <TextBlock x:Name="RefreshText" Text="새로 고침"/>
+                    <TextBlock Text="새로 고침"/>
                 </Button>
                 <Button Style="{StaticResource MenuButton}" Click="Dashboard_Click">
                     <TextBlock Text="사용량 대시보드"/>

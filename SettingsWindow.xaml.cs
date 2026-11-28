@@ -10,7 +10,6 @@ using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using Microsoft.Win32;
 
 namespace UsageBar;
 
@@ -20,7 +19,6 @@ public partial class SettingsWindow : Window
     record Page(Provider Provider, string Name, Brush Color, Brush LogoFill, Geometry Logo, Geometry? Inner, ImageSource? Image, bool Shown, bool CanHide, string ShownNote,
         string Status, string Plan, string Updated, bool Installed, string LoginLabel, string LoginNote);
 
-    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string TaskName = "UsageBar";
 
     static SettingsWindow? open;
@@ -71,7 +69,7 @@ public partial class SettingsWindow : Window
             p.Usage?.Plan ?? "–",
             app.Refreshing ? "업데이트 중..." : p.UpdatedAt is { } at ? PopupWindow.Ago(at) : "–",
             p.Installed, p.Available ? "다시 로그인" : "로그인",
-            p.Installed ? $"터미널에서 {p.LoginCommand}을 실행합니다." : $"{p.Id} 명령을 설치한 뒤 로그인할 수 있습니다.")).ToList();
+            p.Installed ? $"터미널에서 {p.LoginCommand} 명령을 실행합니다." : $"{p.Id} 명령을 설치한 뒤 로그인할 수 있습니다.")).ToList();
         for (var i = 0; i < pages.Count; i++)
         {
             var tab = (TabItem)Pages.Items[i + 1]; // after 일반
@@ -84,8 +82,6 @@ public partial class SettingsWindow : Window
 
     void LaunchAtLogin_Click(object sender, RoutedEventArgs e)
     {
-        // Earlier builds used the Run key, which Explorer starts a minute or more after sign-in.
-        Registry.CurrentUser.OpenSubKey(RunKey, writable: true)?.DeleteValue("UsageBar", throwOnMissingValue: false);
         if (LaunchAtLogin.IsChecked == true) TaskFolder().RegisterTask(TaskName, LogonTaskXml(), 6 /* CREATE_OR_UPDATE */, null, null, 3 /* INTERACTIVE_TOKEN */);
         else if (LogonTaskExists()) TaskFolder().DeleteTask(TaskName, 0);
     }

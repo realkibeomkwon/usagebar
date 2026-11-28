@@ -28,7 +28,7 @@ dotnet run -c Release
 
 ## 공급자
 
-로그인되어 있는 공급자만 표시됩니다. 사용량은 5분마다 갱신되며, 팝업의 **새로 고침**으로 즉시 갱신할 수도 있습니다.
+아래 표의 조건을 만족하는 공급자만 표시됩니다. 사용량은 5분마다 갱신되며, 팝업의 **새로 고침**으로 즉시 갱신할 수도 있습니다.
 
 ## 설정
 
@@ -45,13 +45,14 @@ dotnet run -c Release
 | Claude | `~/.claude/.credentials.json`(Claude Code 로그인) | Claude OAuth 사용량 API |
 | ChatGPT | PATH의 `codex` 명령 | `codex app-server`의 `account/rateLimits/read` |
 | Grok | PATH 또는 `~/.grok/bin`의 `grok` 명령 | `grok agent stdio`의 `_x.ai/billing` |
-| OpenCode | `opencode auth export`가 보여 주는 `opencode-go`(없으면 `opencode`) API 키. 1.x는 `~/.local/share/opencode/auth.json`에서 읽습니다 | OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도 |
+| OpenCode | PATH 또는 `~/.opencode/bin`의 `opencode` 명령 | `opencode auth export`가 보여 주는 `opencode-go`(없으면 `opencode`) API 키로 조회한 OpenCode Go 사용량 API(`/zen/go/v1/usage`)의 5시간, 주간, 월간 한도. 1.x는 `~/.local/share/opencode/auth.json`에서 키를 읽습니다 |
 | Antigravity | PATH 또는 `%LOCALAPPDATA%\agy\bin`의 `agy` 명령 | `agy -p /quota --output-format json`이 보여 주는 모델 그룹(Gemini, Claude와 GPT)별 5시간, 주간 한도. 모델을 호출하지 않습니다. agy의 로그는 갱신할 때마다 새 파일을 만들지 않도록 `%LOCALAPPDATA%\UsageBar\agy.log` 하나에 덮어씁니다. agy의 자동 업데이트는 확인할 때마다 콘솔 창을 잠깐 띄우므로, 갱신 직전에 agy의 마지막 확인 시각(`%USERPROFILE%\.gemini\antigravity-cli\last_check.timestamp`)을 지금으로 바꿔 확인을 건너뛰게 합니다. 따라서 agy는 터미널에서 `agy update`로 직접 업데이트합니다 |
 
 로그인 갱신은 공급자마다 다릅니다.
 
 - Claude: 액세스 토큰(약 8시간 유효)이 만료되면 UsageBar가 Claude Code와 같은 방식으로 갱신합니다. Claude Code의 갱신 잠금(`~/.claude/.oauth_refresh.lock`과 이전 버전이 쓰는 `~/.claude.lock`)을 잡은 뒤 `.credentials.json`을 다시 읽고, 다른 프로세스가 이미 갱신하지 않았으면 리프레시 토큰으로 새 토큰을 받아 `claudeAiOauth`의 토큰 항목만 교체합니다. 그래서 부팅 직후 Claude Code나 Claude Desktop을 실행하지 않아도 사용량이 표시됩니다. 리프레시 토큰까지 만료되면 터미널에서 `claude auth login`을 실행합니다.
 - Codex, Grok, Antigravity: UsageBar는 인증 파일을 수정하지 않고, CLI가 직접 로그인을 갱신합니다. 로그인이 만료되면 터미널에서 `codex login`, `grok login` 또는 `agy`를 실행합니다.
+- OpenCode: UsageBar는 API 키를 읽기만 하고 갱신하지 않습니다. 사용량 API가 키를 거부하면 터미널에서 `opencode auth login`을 실행합니다.
 
 메뉴 바와 트레이 아이콘의 숫자는 가장 많이 사용한 한도 창의 남은 비율입니다(CodexBar의 자동 표시 방식).
 
@@ -87,7 +88,6 @@ UsageBar는 갱신할 때마다 `%LOCALAPPDATA%\UsageBar\status.json`을 통째�
 
 - CodexBar에 있는 비용 및 토큰 집계(로컬 로그 기반), 30일 차트, 이전 한도 창 기록, 크레딧, 계정 전환, 상태 페이지, 알림은 아직 없습니다.
 - Grok 사용량은 현재 크레딧 형식만 읽습니다. 새 주가 시작될 때처럼 사용률이 응답에 없으면 사용량을 표시하지 않습니다.
-- 주 모니터만 지원합니다.
 
 오류가 발생하면 `%LOCALAPPDATA%\UsageBar\crash.log`에 기록됩니다.
 
